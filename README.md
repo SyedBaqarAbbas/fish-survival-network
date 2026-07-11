@@ -30,6 +30,7 @@ npm run typecheck    # Run TypeScript without emitting files
 npm test             # Run Vitest once
 npm run test:watch   # Run Vitest in watch mode
 npm run test:e2e     # Run Playwright against the local app
+npm run simulate     # Run a deterministic scripted episode (optional seed argument)
 npm run train:starter # Check the starter-training command scaffold
 ```
 
@@ -49,3 +50,11 @@ tests/e2e/        Browser-level verification
 ```
 
 Simulation, evolution, and serialization modules must remain independent from React, PixiJS, and browser globals so the same deterministic implementation can run in browser workers, Node scripts, and tests.
+
+## Simulation Defaults
+
+The deterministic core uses a `1000 × 700` world, a `1/60` fixed timestep, and exactly 900 steps per 15-second episode. Fish and predator spawning, scripted steering, wall impacts, catches, and sensor observations are reproducible from the episode seed. Run the same scenario repeatedly with:
+
+```bash
+npm run simulate -- 42
+```

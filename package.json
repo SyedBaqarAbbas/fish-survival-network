@@ -12,6 +12,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "simulate": "node --import tsx scripts/run-scripted-episode.ts",
     "train:starter": "node --import tsx scripts/train-starter.ts"
   },
   "engines": {

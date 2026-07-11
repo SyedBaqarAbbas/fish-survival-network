@@ -19,3 +19,25 @@ export interface WorldConfig {
   fixedDt: number;
   episodeSeconds: number;
 }
+
+export interface AgentConfig {
+  radius: number;
+  maxSpeed: number;
+  maxAcceleration: number;
+}
+
+export interface SpawnConfig {
+  wallMargin: number;
+  minFishPredatorDistance: number;
+  minFishSpacing: number;
+  maxPlacementAttempts: number;
+}
+
+export interface SpawnLayout {
+  fish: AgentState[];
+  predator: AgentState;
+}
+
+export type CurriculumLevel = 0 | 1 | 2 | 3 | 4 | 5 | 6;
+
+export type Steering = Vector2;
