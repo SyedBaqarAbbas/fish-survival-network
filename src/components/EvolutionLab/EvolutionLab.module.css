@@ -1,0 +1,292 @@
+.page {
+  width: min(100% - 32px, 880px);
+  margin: 0 auto;
+  padding: 28px 0 44px;
+}
+
+.header,
+.sectionHeader,
+.tankHeader,
+.levelBand,
+.metrics,
+.workerStatus {
+  display: flex;
+  align-items: center;
+}
+
+.header {
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.header h1,
+.sectionHeader h2,
+.tankHeader h2,
+.tankBody p,
+.eyebrow {
+  margin: 0;
+}
+
+.header h1 {
+  font-size: 26px;
+  line-height: 1.15;
+  font-weight: 720;
+}
+
+.eyebrow,
+.sectionHeader span,
+.networkLabels,
+.workerStatus small,
+.levelBand,
+.tankHeader,
+.metrics,
+.tankBody p {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+.eyebrow {
+  margin-bottom: 7px;
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.workerStatus {
+  min-width: 148px;
+  gap: 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+.workerStatus > span:last-child {
+  display: grid;
+  gap: 2px;
+}
+
+.workerStatus small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.workerStatus strong {
+  font-size: 13px;
+}
+
+.statusDot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.workerStatus[data-state="ready"] .statusDot {
+  background: var(--success);
+  box-shadow: 0 0 10px rgba(84, 214, 160, 0.65);
+}
+
+.workerStatus[data-state="error"] .statusDot,
+.workerStatus[data-state="unsupported"] .statusDot {
+  background: var(--danger);
+}
+
+.networkPanel,
+.tank {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+.networkPanel {
+  padding: 16px 18px 12px;
+}
+
+.sectionHeader,
+.tankHeader {
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.sectionHeader h2,
+.tankHeader h2 {
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.sectionHeader span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.network {
+  display: block;
+  width: 100%;
+  height: 230px;
+  margin-top: 8px;
+}
+
+.edges line {
+  stroke: rgba(255, 39, 148, 0.13);
+  stroke-width: 0.75;
+}
+
+.nodes circle {
+  fill: var(--panel);
+  stroke: var(--muted);
+  stroke-width: 1.5;
+}
+
+.nodes circle:last-child {
+  stroke: var(--primary);
+}
+
+.networkLabels {
+  fill: var(--muted);
+  font-size: 10px;
+}
+
+.levelBand {
+  justify-content: center;
+  gap: 7px;
+  min-height: 54px;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+.levelBand strong {
+  color: var(--primary);
+  font-size: 21px;
+}
+
+.tank {
+  position: relative;
+  aspect-ratio: 10 / 7;
+  min-height: 300px;
+}
+
+.tankHeader {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  width: 100%;
+  padding: 16px 18px;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.tankHeader strong {
+  color: var(--primary);
+  font-size: 18px;
+}
+
+.tankBody {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  min-height: 300px;
+  place-content: center;
+  justify-items: center;
+  gap: 16px;
+  background: #0f0d12;
+}
+
+.tankBody p {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.fishMark {
+  position: relative;
+  width: 38px;
+  height: 18px;
+  border-radius: 50% 70% 70% 50%;
+  background: var(--foreground);
+  transform: rotate(-12deg);
+  opacity: 0.7;
+}
+
+.fishMark::after {
+  position: absolute;
+  top: 2px;
+  left: -11px;
+  width: 0;
+  height: 0;
+  border-top: 7px solid transparent;
+  border-right: 14px solid var(--foreground);
+  border-bottom: 7px solid transparent;
+  content: "";
+}
+
+.metrics {
+  justify-content: space-between;
+  min-height: 58px;
+  padding: 0 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.metrics strong {
+  color: var(--foreground);
+  font-size: 14px;
+}
+
+@media (max-width: 600px) {
+  .page {
+    width: min(100% - 20px, 880px);
+    padding-top: 18px;
+  }
+
+  .header {
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .header h1 {
+    max-width: 190px;
+    font-size: 21px;
+  }
+
+  .workerStatus {
+    min-width: 124px;
+    padding: 8px 9px;
+  }
+
+  .networkPanel {
+    padding-inline: 10px;
+  }
+
+  .network {
+    height: 190px;
+  }
+
+  .tank {
+    min-height: 0;
+  }
+
+  .tankBody {
+    min-height: 0;
+  }
+
+  .tankHeader {
+    padding: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .workerStatus[data-state="starting"] .statusDot {
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
