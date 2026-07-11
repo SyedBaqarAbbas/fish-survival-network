@@ -84,7 +84,8 @@
   background: var(--muted);
 }
 
-.workerStatus[data-state="ready"] .statusDot {
+.workerStatus[data-state="ready"] .statusDot,
+.workerStatus[data-state="running"] .statusDot {
   background: var(--success);
   box-shadow: 0 0 10px rgba(84, 214, 160, 0.65);
 }

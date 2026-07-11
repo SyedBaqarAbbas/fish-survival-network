@@ -1,10 +1,9 @@
-import { CHECKPOINT_SCHEMA_VERSION } from "@/persistence/types";
-
 import {
-  isTrainerCommand,
   TRAINER_PROTOCOL_VERSION,
+  trainerCommandSchema,
   type TrainerEvent,
 } from "./protocol";
+import { TrainerEngine } from "./trainerEngine";
 
 interface TrainerWorkerScope {
   addEventListener(
@@ -15,19 +14,20 @@ interface TrainerWorkerScope {
 }
 
 const workerScope = self as unknown as TrainerWorkerScope;
+const emit = (event: TrainerEvent) => workerScope.postMessage(event);
+const engine = new TrainerEngine({ emit });
 
 workerScope.addEventListener("message", (event) => {
-  if (!isTrainerCommand(event.data)) {
-    workerScope.postMessage({
+  const command = trainerCommandSchema.safeParse(event.data);
+  if (!command.success) {
+    emit({
       type: "ERROR",
-      message: "Unsupported trainer protocol.",
+      code: "INVALID_COMMAND",
+      message: `Unsupported trainer protocol v${TRAINER_PROTOCOL_VERSION} command.`,
+      recoverable: true,
     });
     return;
   }
 
-  workerScope.postMessage({
-    type: "READY",
-    protocolVersion: TRAINER_PROTOCOL_VERSION,
-    checkpointSchemaVersion: CHECKPOINT_SCHEMA_VERSION,
-  });
+  engine.handle(command.data);
 });

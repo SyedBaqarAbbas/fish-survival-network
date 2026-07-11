@@ -38,6 +38,20 @@ export interface EvaluatePopulationOptions {
   world?: Readonly<WorldConfig>;
 }
 
+export function deriveGenerationEpisodeSeeds(
+  runSeed: number,
+  generation: number,
+  episodesPerGenome: number,
+) {
+  if (!Number.isSafeInteger(episodesPerGenome) || episodesPerGenome <= 0) {
+    throw new RangeError("episodesPerGenome must be a positive safe integer.");
+  }
+
+  return Array.from({ length: episodesPerGenome }, (_, index) =>
+    deriveEpisodeSeed(runSeed, generation, index),
+  );
+}
+
 function evaluateEpisode(
   genome: Readonly<NetworkGenome>,
   seed: number,
@@ -126,12 +140,11 @@ export function evaluatePopulation(
   if (population.length === 0) {
     throw new RangeError("Population cannot be empty.");
   }
-  if (!Number.isSafeInteger(episodesPerGenome) || episodesPerGenome <= 0) {
-    throw new RangeError("episodesPerGenome must be a positive safe integer.");
-  }
 
-  const episodeSeeds = Array.from({ length: episodesPerGenome }, (_, index) =>
-    deriveEpisodeSeed(runSeed, generation, index),
+  const episodeSeeds = deriveGenerationEpisodeSeeds(
+    runSeed,
+    generation,
+    episodesPerGenome,
   );
   const genomes = population.map((genome, populationIndex) =>
     evaluateGenome({

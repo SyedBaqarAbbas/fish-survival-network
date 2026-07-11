@@ -1,104 +1,88 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import { createTrainerWorker } from "./createTrainerWorker";
+import { createCheckpointRepository } from "@/persistence";
+
 import {
-  isTrainerEvent,
-  TRAINER_PROTOCOL_VERSION,
-  type TrainerCommand,
-} from "./protocol";
+  TrainerClient,
+  type TrainerClientState,
+  type TrainerClientStatus,
+} from "./trainerClient";
 
-export type TrainerWorkerStatus =
-  | "starting"
-  | "ready"
-  | "error"
-  | "unsupported";
+export type TrainerWorkerStatus = TrainerClientStatus | "unsupported";
 
-export interface TrainerWorkerState {
+export interface TrainerWorkerState extends Omit<TrainerClientState, "status"> {
   status: TrainerWorkerStatus;
-  error?: string;
+  start: () => void;
+  pause: () => void;
+  reset: () => void;
+  setCurriculum: TrainerClient["setCurriculum"];
+  requestCheckpoint: () => void;
 }
 
+const DEFAULT_RUN_ID = "local-active-run";
+const DEFAULT_RUN_SEED = 42;
+
+const INITIAL_STATE: TrainerClientState = {
+  status: "starting",
+  recovered: false,
+};
+
 export function useTrainerWorker(): TrainerWorkerState {
-  const [state, setState] = useState<TrainerWorkerState>({
-    status: "starting",
-  });
+  const clientRef = useRef<TrainerClient>(null);
+  const [state, setState] = useState<TrainerClientState>(INITIAL_STATE);
+  const [unsupported, setUnsupported] = useState(false);
 
   useEffect(() => {
     if (typeof Worker === "undefined") {
       let active = true;
       queueMicrotask(() => {
-        if (active) {
-          setState({
-            status: "unsupported",
-            error: "Web Workers are unavailable in this browser.",
-          });
-        }
+        if (active) setUnsupported(true);
       });
       return () => {
         active = false;
       };
     }
 
-    let worker: Worker;
-    try {
-      worker = createTrainerWorker();
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "The training worker failed to start.";
-      let active = true;
-      queueMicrotask(() => {
-        if (active) {
-          setState({ status: "error", error: message });
-        }
-      });
-      return () => {
-        active = false;
-      };
-    }
-
-    const handleMessage = (event: MessageEvent<unknown>) => {
-      if (!isTrainerEvent(event.data)) {
-        setState({ status: "error", error: "Invalid trainer response." });
-        return;
-      }
-
-      if (event.data.type === "ERROR") {
-        setState({ status: "error", error: event.data.message });
-        return;
-      }
-
-      if (event.data.protocolVersion !== TRAINER_PROTOCOL_VERSION) {
-        setState({ status: "error", error: "Trainer protocol mismatch." });
-        return;
-      }
-
-      setState({ status: "ready" });
-    };
-
-    const handleError = (event: ErrorEvent) => {
-      setState({
-        status: "error",
-        error: event.message || "The training worker failed to start.",
-      });
-    };
-
-    worker.addEventListener("message", handleMessage);
-    worker.addEventListener("error", handleError);
-
-    const command: TrainerCommand = {
-      type: "INITIALIZE",
-      protocolVersion: TRAINER_PROTOCOL_VERSION,
-    };
-    worker.postMessage(command);
+    const client = new TrainerClient({
+      persistence: createCheckpointRepository(),
+      runId: DEFAULT_RUN_ID,
+      runSeed: DEFAULT_RUN_SEED,
+    });
+    clientRef.current = client;
+    const unsubscribe = client.subscribe((nextState) => {
+      setState({ ...nextState });
+    });
+    void client.initialize();
 
     return () => {
-      worker.removeEventListener("message", handleMessage);
-      worker.removeEventListener("error", handleError);
-      worker.terminate();
+      clientRef.current = null;
+      unsubscribe();
+      client.dispose();
     };
   }, []);
 
-  return state;
+  const start = useCallback(() => clientRef.current?.start(), []);
+  const pause = useCallback(() => clientRef.current?.pause(), []);
+  const reset = useCallback(() => clientRef.current?.reset(), []);
+  const setCurriculum = useCallback(
+    (level: Parameters<TrainerClient["setCurriculum"]>[0]) =>
+      clientRef.current?.setCurriculum(level),
+    [],
+  );
+  const requestCheckpoint = useCallback(
+    () => clientRef.current?.requestCheckpoint(),
+    [],
+  );
+
+  return {
+    ...state,
+    status: unsupported ? "unsupported" : state.status,
+    start,
+    pause,
+    reset,
+    setCurriculum,
+    requestCheckpoint,
+  };
 }

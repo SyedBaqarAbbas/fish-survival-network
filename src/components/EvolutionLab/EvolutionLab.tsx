@@ -10,7 +10,9 @@ const OUTPUT_NODES = 2;
 
 const statusLabels = {
   error: "Error",
+  paused: "Paused",
   ready: "Ready",
+  running: "Running",
   starting: "Starting",
   unsupported: "Unavailable",
 } as const;

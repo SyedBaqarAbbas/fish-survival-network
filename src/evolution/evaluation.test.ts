@@ -4,12 +4,23 @@ import { WORLD_CONFIG } from "@/simulation/config";
 import { SeededRandom } from "@/simulation/random";
 
 import { DEFAULT_EVOLUTION_CONFIG } from "./config";
-import { evaluatePopulation } from "./evaluation";
+import {
+  deriveGenerationEpisodeSeeds,
+  evaluatePopulation,
+} from "./evaluation";
 import { createRandomGenome } from "./genome";
 
 const SHORT_WORLD = Object.freeze({ ...WORLD_CONFIG, episodeSeconds: 0.5 });
 
 describe("population evaluation", () => {
+  it("derives the requested stable generation seed list", () => {
+    expect(deriveGenerationEpisodeSeeds(42, 0, 2)).toEqual([
+      1158429784, 1732316037,
+    ]);
+    expect(() => deriveGenerationEpisodeSeeds(42, 0, 0)).toThrow(RangeError);
+    expect(() => deriveGenerationEpisodeSeeds(42, 0, 1.5)).toThrow(RangeError);
+  });
+
   it("uses the same derived episode seeds for every genome", () => {
     const population = [
       createRandomGenome("a", new SeededRandom(8)),

@@ -1,11 +1,20 @@
 import { SeededRandom } from "@/simulation/random";
+import type { CurriculumLevel } from "@/simulation/types";
 
 import { DEFAULT_EVOLUTION_CONFIG, validateEvolutionConfig } from "./config";
-import { createCurriculumState, updateCurriculum } from "./curriculum";
-import { evaluatePopulation } from "./evaluation";
+import {
+  createCurriculumState,
+  initializeNewInputWeights,
+  updateCurriculum,
+} from "./curriculum";
+import {
+  deriveGenerationEpisodeSeeds,
+  evaluatePopulation,
+} from "./evaluation";
 import { medianSurvivalRate } from "./fitness";
 import { reproducePopulation, rankGenomeEvaluations } from "./genetics";
 import { cloneGenome, createRandomGenome } from "./genome";
+import { getUnlockedInputIndices } from "./inputs";
 import type {
   CreateEvolutionRunOptions,
   EvolveGenerationOptions,
@@ -13,6 +22,7 @@ import type {
   EvolutionRunState,
   GenerationResult,
   NetworkGenome,
+  PopulationEvaluation,
 } from "./types";
 
 export function createPopulation(
@@ -56,17 +66,118 @@ function findGenome(population: readonly NetworkGenome[], genomeId: string) {
   return genome;
 }
 
-export function evolveGeneration(
+function assertCurriculumLevel(level: number): asserts level is CurriculumLevel {
+  if (!Number.isSafeInteger(level) || level < 0 || level > 6) {
+    throw new RangeError("Curriculum level must be an integer between 0 and 6.");
+  }
+}
+
+export function setCurriculumLevel(
   currentState: Readonly<EvolutionRunState>,
-  { world }: EvolveGenerationOptions = {},
+  targetLevel: CurriculumLevel,
+): EvolutionRunState {
+  assertCurriculumLevel(targetLevel);
+  const random = new SeededRandom(currentState.randomState);
+  let population = currentState.population.map((genome) => cloneGenome(genome));
+
+  for (
+    let level = currentState.curriculum.level + 1;
+    level <= targetLevel;
+    level += 1
+  ) {
+    population = initializeNewInputWeights(
+      population,
+      level as CurriculumLevel,
+      random,
+      currentState.config,
+    );
+  }
+
+  const unlockedInputs = new Set(getUnlockedInputIndices(targetLevel));
+  for (const genome of population) {
+    for (let hiddenIndex = 0; hiddenIndex < genome.hiddenCount; hiddenIndex += 1) {
+      const offset = hiddenIndex * genome.inputCount;
+      for (let inputIndex = 0; inputIndex < genome.inputCount; inputIndex += 1) {
+        if (!unlockedInputs.has(inputIndex)) {
+          genome.inputToHidden[offset + inputIndex] = 0;
+        }
+      }
+    }
+  }
+
+  return {
+    ...currentState,
+    randomState: random.getState(),
+    population,
+    curriculum: {
+      ...currentState.curriculum,
+      level: targetLevel,
+      stableGenerations: 0,
+    },
+  };
+}
+
+function assertEvaluationMatchesState(
+  currentState: Readonly<EvolutionRunState>,
+  evaluation: Readonly<PopulationEvaluation>,
+) {
+  if (evaluation.generation !== currentState.generation) {
+    throw new Error("Evaluation generation does not match the run state.");
+  }
+  if (evaluation.level !== currentState.curriculum.level) {
+    throw new Error("Evaluation level does not match the run state.");
+  }
+  if (currentState.population.length !== currentState.config.populationSize) {
+    throw new Error("Run population size does not match the evolution config.");
+  }
+
+  const expectedSeeds = deriveGenerationEpisodeSeeds(
+    currentState.runSeed,
+    currentState.generation,
+    currentState.config.episodesPerGenome,
+  );
+  if (
+    evaluation.episodeSeeds.length !== expectedSeeds.length ||
+    evaluation.episodeSeeds.some((seed, index) => seed !== expectedSeeds[index])
+  ) {
+    throw new Error("Evaluation seeds do not match the run state.");
+  }
+  if (evaluation.genomes.length !== currentState.population.length) {
+    throw new Error("Evaluation count does not match the run population.");
+  }
+
+  const populationIds = new Set<string>();
+  for (let index = 0; index < currentState.population.length; index += 1) {
+    const genome = currentState.population[index];
+    const genomeEvaluation = evaluation.genomes[index];
+    if (populationIds.has(genome.id)) {
+      throw new Error(`Duplicate genome ID ${genome.id}.`);
+    }
+    populationIds.add(genome.id);
+    if (
+      genomeEvaluation.populationIndex !== index ||
+      genomeEvaluation.genomeId !== genome.id
+    ) {
+      throw new Error(`Evaluation does not match population index ${index}.`);
+    }
+    if (genomeEvaluation.episodes.length !== expectedSeeds.length) {
+      throw new Error(`Evaluation for ${genome.id} has the wrong episode count.`);
+    }
+    if (
+      genomeEvaluation.episodes.some(
+        (episode, episodeIndex) => episode.seed !== expectedSeeds[episodeIndex],
+      )
+    ) {
+      throw new Error(`Evaluation for ${genome.id} does not use the shared seeds.`);
+    }
+  }
+}
+
+export function completeEvaluatedGeneration(
+  currentState: Readonly<EvolutionRunState>,
+  evaluation: PopulationEvaluation,
 ): GenerationResult {
-  const evaluation = evaluatePopulation(currentState.population, {
-    runSeed: currentState.runSeed,
-    generation: currentState.generation,
-    level: currentState.curriculum.level,
-    episodesPerGenome: currentState.config.episodesPerGenome,
-    world,
-  });
+  assertEvaluationMatchesState(currentState, evaluation);
   const ranked = rankGenomeEvaluations(evaluation.genomes);
   const champion = cloneGenome(
     findGenome(currentState.population, ranked[0].genomeId),
@@ -107,4 +218,18 @@ export function evolveGeneration(
     champion,
     curriculumAdvanced: curriculum.advanced,
   };
+}
+
+export function evolveGeneration(
+  currentState: Readonly<EvolutionRunState>,
+  { world }: EvolveGenerationOptions = {},
+): GenerationResult {
+  const evaluation = evaluatePopulation(currentState.population, {
+    runSeed: currentState.runSeed,
+    generation: currentState.generation,
+    level: currentState.curriculum.level,
+    episodesPerGenome: currentState.config.episodesPerGenome,
+    world,
+  });
+  return completeEvaluatedGeneration(currentState, evaluation);
 }

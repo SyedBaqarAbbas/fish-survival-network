@@ -25,6 +25,11 @@ class ReadyWorkerMock {
           type: "READY",
           protocolVersion: 1,
           checkpointSchemaVersion: 1,
+          runId: "test-run",
+          generation: 0,
+          level: 0,
+          status: "paused",
+          restored: false,
         },
       });
       this.messageListeners.forEach((listener) => listener(event));

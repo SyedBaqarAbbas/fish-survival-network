@@ -2,7 +2,7 @@
 
 A browser-first neuroevolution lab for training fish policies against a scripted predator and replaying deterministic generations with PixiJS.
 
-The repository currently contains the Next.js application foundation, deterministic simulation core, and headless genetic evolution engine. Worker orchestration, persistence, and visual replay are added by subsequent project issues.
+The repository currently contains the Next.js application foundation, deterministic simulation core, genetic evolution engine, cooperative training worker, and versioned local checkpoint persistence. Visual replay and the full training controls are added by subsequent project issues.
 
 ## Requirements
 
@@ -45,8 +45,8 @@ src/components/   React UI and client-only lab boundary
 src/simulation/   Deterministic world contracts
 src/evolution/    Genome and training contracts
 src/rendering/    Packed replay snapshot contracts
-src/persistence/  Versioned checkpoint contracts
-src/workers/      Typed worker protocol and entry points
+src/persistence/  Versioned checkpoint codec and IndexedDB repository
+src/workers/      Typed protocol, cooperative engine, and recovery client
 tests/e2e/        Browser-level verification
 ```
 
@@ -69,3 +69,11 @@ Run one complete default generation with:
 ```bash
 npm run evolve:once -- 42
 ```
+
+## Training And Checkpoints
+
+Browser training evaluates four genomes per worker task and yields between chunks so pause, reset, curriculum, and checkpoint commands remain responsive. Progress is emitted after every chunk. Only the finalized post-reproduction state is resumable; partial evaluation arrays never enter a checkpoint.
+
+Checkpoints use schema version 1 and include the complete population, seeded PRNG state, evolution and world configuration, curriculum archives, and generation metric history. Float32 parameters use a canonical little-endian Base64 representation so JSON bundles and IndexedDB records share the same strict Zod validation path.
+
+The browser keeps one active run in IndexedDB. Invalid or unknown records are quarantined, write failures switch to an in-memory session store with a typed warning, and worker crashes recover from the last completed checkpoint in a paused state.
