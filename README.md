@@ -2,7 +2,7 @@
 
 A browser-first neuroevolution lab for training fish policies against a scripted predator and replaying deterministic generations with PixiJS.
 
-The repository currently contains the application foundation tracked by Linear issue `FIS-5`: a Next.js App Router shell, strict TypeScript boundaries, test tooling, and a real Web Worker readiness handshake. Simulation and evolution behavior are added by the subsequent project issues.
+The repository currently contains the Next.js application foundation, deterministic simulation core, and headless genetic evolution engine. Worker orchestration, persistence, and visual replay are added by subsequent project issues.
 
 ## Requirements
 
@@ -30,11 +30,12 @@ npm run typecheck    # Run TypeScript without emitting files
 npm test             # Run Vitest once
 npm run test:watch   # Run Vitest in watch mode
 npm run test:e2e     # Run Playwright against the local app
+npm run evolve:once  # Evaluate/reproduce one default 256 × 8 generation
 npm run simulate     # Run a deterministic scripted episode (optional seed argument)
 npm run train:starter # Check the starter-training command scaffold
 ```
 
-The starter command is intentionally non-mutating until the evolution engine is implemented under `FIS-11`; it reports the checkpoint schema reserved by the foundation.
+The starter command is intentionally non-mutating until the trained checkpoint is generated under `FIS-11`; it reports the checkpoint schema reserved by the foundation.
 
 ## Architecture
 
@@ -57,4 +58,14 @@ The deterministic core uses a `1000 × 700` world, a `1/60` fixed timestep, and 
 
 ```bash
 npm run simulate -- 42
+```
+
+## Evolution Defaults
+
+Fish use a fixed `11 → 8 → 2` tanh network. Each generation evaluates 256 genomes over the same eight deterministic episode seeds, preserves 13 elites, and creates offspring with seeded tournament selection, uniform crossover, and Gaussian mutation. The curriculum unlocks sensor groups after five consecutive generations reach a median survival rate of at least `0.75`.
+
+Run one complete default generation with:
+
+```bash
+npm run evolve:once -- 42
 ```
