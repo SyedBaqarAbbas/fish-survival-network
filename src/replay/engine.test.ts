@@ -76,6 +76,34 @@ function load(
   harness.engine.handle(command({ type: "LOAD", source, replaySeed }));
 }
 
+function stationaryReplaySource(seed = 42, episodeSeconds = 15) {
+  const source = createDemoReplaySource(seed);
+  source.world.episodeSeconds = episodeSeconds;
+  for (const { genome } of source.entries) {
+    genome.inputToHidden.fill(0);
+    genome.hiddenBias.fill(0);
+    genome.hiddenToOutput.fill(0);
+    genome.outputBias.fill(0);
+  }
+  return source;
+}
+
+function catchEveryFishOnNextPulse(engine: ReplayEngine) {
+  type MovingAgent = { x: number; y: number; vx: number; vy: number };
+  const active = (
+    engine as unknown as {
+      active?: { state: { fish: MovingAgent[]; predator: MovingAgent } };
+    }
+  ).active;
+  if (!active) throw new Error("A replay must be active before forcing a catch.");
+  for (const fish of active.state.fish) {
+    fish.x = active.state.predator.x;
+    fish.y = active.state.predator.y;
+    fish.vx = active.state.predator.vx;
+    fish.vy = active.state.predator.vy;
+  }
+}
+
 function eventsOfType<Type extends ReplayEvent["type"]>(
   events: ReplayEvent[],
   type: Type,
@@ -167,6 +195,26 @@ describe("ReplayEngine", () => {
     );
   });
 
+  it("continues past the configured duration while living fish remain", () => {
+    const harness = createHarness();
+    load(harness, stationaryReplaySource(70, 0.1), 91);
+    harness.engine.handle(command({ type: "PLAY" }));
+
+    while (
+      (eventsOfType(harness.events, "SNAPSHOT").at(-1)?.simulationTime ?? 0) <=
+      0.1
+    ) {
+      harness.scheduler.runNext();
+    }
+
+    const snapshot = eventsOfType(harness.events, "SNAPSHOT").at(-1);
+    expect(snapshot?.simulationTime).toBeGreaterThan(0.1);
+    expect([...snapshot!.alive].some(Boolean)).toBe(true);
+    expect(eventsOfType(harness.events, "EPISODE_END")).toHaveLength(0);
+    expect(eventsOfType(harness.events, "MAPPING")).toHaveLength(1);
+    expect(harness.engine.getStatus()).toBe("playing");
+  });
+
   it("applies a new source immediately only while paused at step zero", () => {
     const harness = createHarness();
     const first = createDemoReplaySource(1);
@@ -203,17 +251,20 @@ describe("ReplayEngine", () => {
     load(harness, second);
     load(harness, latest);
 
-    while (eventsOfType(harness.events, "EPISODE_END").length === 0) {
-      harness.scheduler.runNext();
-    }
+    catchEveryFishOnNextPulse(harness.engine);
+    harness.scheduler.runNext();
 
     const end = eventsOfType(harness.events, "EPISODE_END")[0];
     const mappings = eventsOfType(harness.events, "MAPPING");
     const catches = eventsOfType(harness.events, "CATCH").filter(
       (event) => event.episodeId === 1,
     );
-    expect(end).toMatchObject({ sourceId: first.sourceId, simulationTime: 15 });
-    expect(end.survivors + end.caught).toBe(48);
+    expect(end).toMatchObject({
+      sourceId: first.sourceId,
+      survivors: 0,
+      caught: 48,
+    });
+    expect(end.simulationTime).toBeLessThan(first.world.episodeSeconds);
     expect(catches).toHaveLength(end.caught);
     expect(new Set(catches.map((event) => event.fishIndex)).size).toBe(
       catches.length,

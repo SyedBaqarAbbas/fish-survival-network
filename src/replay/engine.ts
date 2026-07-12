@@ -181,6 +181,7 @@ export class ReplayEngine {
         world: ownedSource.world,
       }),
       ownedSource.world,
+      { endCondition: "all-fish-caught" },
     );
     return {
       load: { source: ownedSource, replaySeed },

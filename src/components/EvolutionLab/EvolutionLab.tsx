@@ -241,13 +241,16 @@ export function EvolutionLab({
   const requestedReplaySourceRef = useRef(requestedReplaySource);
   const mappingRef = useRef<ReplayMappingEvent | undefined>(undefined);
   const selectionRef = useRef<SelectedFish | undefined>(undefined);
-  const lastRequestedSourceIdRef = useRef(requestedReplaySource.sourceId);
   const { activation, clear: clearActivation, publish: publishActivation } =
     useThrottledActivation();
 
   const [mode, setMode] = useState<LabMode>("replay");
   const [playing, setPlaying] = useState(true);
   const [speed, setSpeed] = useState<ReplaySpeed>(1);
+  const [replayReady, setReplayReady] = useState(
+    worker.status !== "starting",
+  );
+  if (!replayReady && worker.status !== "starting") setReplayReady(true);
   const [aliveCount, setAliveCount] = useState<number>(REPLAY_FISH_COUNT);
   const [activeReplaySource, setActiveReplaySource] =
     useState(starterReplaySource);
@@ -264,14 +267,6 @@ export function EvolutionLab({
   useEffect(() => {
     requestedReplaySourceRef.current = requestedReplaySource;
   }, [requestedReplaySource]);
-
-  useEffect(() => {
-    if (lastRequestedSourceIdRef.current === requestedReplaySource.sourceId) {
-      return;
-    }
-    lastRequestedSourceIdRef.current = requestedReplaySource.sourceId;
-    queueMicrotask(() => tankRef.current?.restart());
-  }, [requestedReplaySource.sourceId]);
 
   const handleMapping = useCallback(
     (event: Readonly<ReplayMappingEvent>) => {
@@ -644,6 +639,7 @@ export function EvolutionLab({
             <span><strong>{aliveCount}</strong> / {REPLAY_FISH_COUNT} fish left</span>
           </header>
           <ReplayTank
+            enabled={replayReady}
             effectsEnabled={!settings.reducedEffects}
             onActivation={handleActivation}
             onAliveCountChange={setAliveCount}

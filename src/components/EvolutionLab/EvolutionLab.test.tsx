@@ -248,6 +248,67 @@ describe("EvolutionLab", () => {
     );
   });
 
+  it("defers the first replay until checkpoint restoration resolves", () => {
+    const starter = replaySource(221);
+    const local = replaySource(222, 4);
+    useTrainerWorkerMock.mockReturnValue(workerState({ status: "starting" }));
+    const view = renderLab(starter);
+
+    expect(replayProps().enabled).toBe(false);
+    useTrainerWorkerMock.mockReturnValue(
+      workerState({
+        status: "ready",
+        replaySource: local,
+        restoredFromCheckpoint: true,
+      }),
+    );
+    view.rerender(
+      <EvolutionLab
+        starterMetricHistory={[generationMetric(starter.generation)]}
+        starterReplaySource={starter}
+      />,
+    );
+
+    expect(replayProps().enabled).toBe(true);
+    expect(replayProps().source.sourceId).toBe(local.sourceId);
+    expect(replayHarness.restart).not.toHaveBeenCalled();
+
+    useTrainerWorkerMock.mockReturnValue(workerState({ status: "starting" }));
+    view.rerender(
+      <EvolutionLab
+        starterMetricHistory={[generationMetric(starter.generation)]}
+        starterReplaySource={starter}
+      />,
+    );
+    expect(replayProps().enabled).toBe(true);
+  });
+
+  it("queues a newly trained replay without restarting the current episode", () => {
+    const starter = replaySource(251);
+    const local = replaySource(252, 4);
+    const view = renderLab(starter);
+
+    useTrainerWorkerMock.mockReturnValue(
+      workerState({
+        replaySource: local,
+        generation: 5,
+        level: 6,
+      }),
+    );
+    view.rerender(
+      <EvolutionLab
+        starterMetricHistory={[generationMetric(starter.generation)]}
+        starterReplaySource={starter}
+      />,
+    );
+
+    expect(screen.getByTestId("replay-tank")).toHaveAttribute(
+      "data-source-id",
+      local.sourceId,
+    );
+    expect(replayHarness.restart).not.toHaveBeenCalled();
+  });
+
   it("keeps mapping, selected genome, and activation identity aligned", async () => {
     const starter = replaySource(301);
     renderLab(starter);

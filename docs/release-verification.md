@@ -78,6 +78,8 @@ The 2026-07-12 release run used macOS 26.5.1 on an Apple M2 Pro MacBook Pro with
 
 The performance test attaches a compact `release-performance.json` record to its Playwright result so later runs can be compared without changing application code.
 
+The same-environment FIS-13 verification on 2026-07-12 completed the full release gate with 42 Vitest files and 208 tests, 11 Playwright tests, a successful production build, and unchanged starter checksums. The performance measurements above remain the evidence from the original clean-install run.
+
 ## Starter Integrity
 
 `npm run validate:starter` revalidates the checked-in Level 6 artifact structure, deterministic recipe metadata, held-out score, artifact checksum, and champion parameter checksum. Regeneration is a separate explicit operation:

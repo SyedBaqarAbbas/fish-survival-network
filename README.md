@@ -78,7 +78,7 @@ Simulation, evolution, and serialization modules remain independent from React, 
 
 ## Simulation Defaults
 
-The deterministic core uses a `1000 x 700` world, a `1/60` fixed timestep, and exactly 900 steps per 15-second episode. Fish and predator spawning, scripted steering, wall impacts, catches, and sensor observations are reproducible from the episode seed. Run the same scenario repeatedly with:
+The deterministic core uses a `1000 x 700` world and a `1/60` fixed timestep. Training and scripted evaluation use exactly 900 steps per 15-second episode; visible replay uses the same fixed-step world but continues until every fish is caught. Fish and predator spawning, scripted steering, wall impacts, catches, and sensor observations are reproducible from the episode seed. Run the same training scenario repeatedly with:
 
 ```bash
 npm run simulate -- 42
@@ -124,7 +124,7 @@ The browser keeps one active run in IndexedDB. Invalid or unknown records are qu
 
 ## Deterministic Replay
 
-Each completed generation checkpoints its evaluated top 48 genomes in ranked order. The replay worker runs those policies against the nearest-target scripted predator on the same fixed-step simulation core and queues a newer trained roster until the current episode ends.
+Each completed generation checkpoints its evaluated top 48 genomes in ranked order. The replay worker runs those policies against the nearest-target scripted predator on the same fixed-step simulation core. A visible replay has no 15-second cutoff: it starts the next deterministic episode only after every fish is caught. The Restart control starts a new episode immediately, and a newer trained roster waits for one of those two boundaries before replacing the active roster.
 
 The worker emits one packed 832-byte snapshot at 15 Hz. PixiJS interpolates the latest two snapshots on `requestAnimationFrame`, keeping position updates outside React. Fish selection maps a stable canvas index back to its genome, while catch events drive pooled particles, trails, and the low-frequency alive counter.
 

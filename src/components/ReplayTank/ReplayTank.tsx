@@ -33,6 +33,7 @@ export interface ReplayTankHandle {
 }
 
 export interface ReplayTankProps {
+  enabled?: boolean;
   effectsEnabled?: boolean;
   onActivation?: (event: Readonly<ReplayActivationEvent>) => void;
   onAliveCountChange?: (aliveCount: number) => void;
@@ -53,6 +54,7 @@ function errorFrom(value: unknown) {
 export const ReplayTank = forwardRef<ReplayTankHandle, ReplayTankProps>(
   function ReplayTank(
     {
+      enabled = true,
       effectsEnabled = true,
       onActivation,
       onAliveCountChange,
@@ -154,6 +156,8 @@ export const ReplayTank = forwardRef<ReplayTankHandle, ReplayTankProps>(
     );
 
     useEffect(() => {
+      if (!enabled) return;
+
       let cancelled = false;
       let client: ReplayClient | undefined;
       let renderer: import("@/rendering").PixiReplayRenderer | undefined;
@@ -255,7 +259,7 @@ export const ReplayTank = forwardRef<ReplayTankHandle, ReplayTankProps>(
         if (rendererRef.current === renderer) rendererRef.current = undefined;
         loadedSourceKeyRef.current = undefined;
       };
-    }, [loadCurrentSource, reportError]);
+    }, [enabled, loadCurrentSource, reportError]);
 
     useEffect(() => {
       const client = clientRef.current;

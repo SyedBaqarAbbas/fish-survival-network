@@ -30,7 +30,7 @@ On the client, `EvolutionLab` owns semantic UI state and coordinates two indepen
 
 ## Simulation And Evolution
 
-`src/simulation` owns the fixed-step world, sensors, spawning, scripted predator, steering, collisions, and episode lifecycle. A standard episode runs in a `1000 x 700` world for 900 fixed `1/60` steps.
+`src/simulation` owns the fixed-step world, sensors, spawning, scripted predator, steering, collisions, and episode lifecycle. Training and scripted evaluation run in a `1000 x 700` world for 900 fixed `1/60` steps. Visible replay uses the same core without the training duration boundary and completes only when every fish is caught.
 
 `src/evolution` owns the `11 -> 8 -> 2` tanh policy, fitness evaluation, seeded selection, crossover, mutation, curriculum, and population reproduction. Evaluation order does not influence results: every genome uses episode seeds derived from the run seed, generation, and episode index.
 
@@ -42,7 +42,7 @@ Replay and training use separate versioned message protocols. Every command is v
 
 The trainer evaluates four genomes per task and yields to the worker event loop between tasks. Pause, reset, curriculum, and checkpoint commands therefore operate at coherent chunk boundaries. The worker only emits resumable checkpoints after a complete generation has been evaluated and reproduced.
 
-The replay worker advances the same fixed-step simulation core and publishes snapshots at 15 Hz. Each snapshot is one 832-byte backing buffer containing fish positions, velocities, alive flags, and predator state. The buffer is transferred, not cloned. Mapping, catch, activation, and episode-end events remain separate semantic messages.
+The replay worker advances the same fixed-step simulation core and publishes snapshots at 15 Hz. It begins a new episode only after all fish are caught or a restart command is received; a pending roster is applied at that boundary. Each snapshot is one 832-byte backing buffer containing fish positions, velocities, alive flags, and predator state. The buffer is transferred, not cloned. Mapping, catch, activation, and episode-end events remain separate semantic messages.
 
 ## Rendering Boundary
 
@@ -63,7 +63,7 @@ The full wire and storage contract is documented in [Checkpoint Format](checkpoi
 For the same run seed, world configuration, evolution configuration, curriculum commands, and JavaScript engine, simulation and evolution state is reproducible. The implementation relies on:
 
 - A seeded uint32 PRNG and explicit seed derivation
-- A fixed timestep and fixed episode length
+- A fixed timestep and fixed training episode length
 - Stable population and episode iteration order
 - Float32 genome and activation buffers
 - Canonical little-endian checkpoint encoding

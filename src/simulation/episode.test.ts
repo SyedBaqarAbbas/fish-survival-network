@@ -47,6 +47,47 @@ describe("simulation episodes", () => {
     expect(state.step).toBe(900);
   });
 
+  it("can ignore the duration boundary and finish only after every fish is caught", () => {
+    const oneStepWorld = {
+      ...WORLD_CONFIG,
+      episodeSeconds: WORLD_CONFIG.fixedDt,
+    };
+    const state = createSimulationState(
+      {
+        fish: [makeFish({ x: 100, y: 100 })],
+        predator: makePredator({ x: 900, y: 600 }),
+      },
+      oneStepWorld,
+      { endCondition: "all-fish-caught" },
+    );
+
+    stepSimulation(state, [ZERO], ZERO);
+    expect(state.step).toBe(state.episodeStepCount);
+    expect(state.finished).toBe(false);
+
+    state.predator.x = state.fish[0].x;
+    state.predator.y = state.fish[0].y;
+    stepSimulation(state, [ZERO], ZERO);
+
+    expect(state.step).toBeGreaterThan(state.episodeStepCount);
+    expect(state.stats.catchCount).toBe(1);
+    expect(state.finished).toBe(true);
+    expect(stepSimulation(state, [ZERO], ZERO)).toBe(false);
+  });
+
+  it("rejects unknown simulation end conditions", () => {
+    expect(() =>
+      createSimulationState(
+        {
+          fish: [makeFish()],
+          predator: makePredator(),
+        },
+        WORLD_CONFIG,
+        { endCondition: "never" } as never,
+      ),
+    ).toThrow(RangeError);
+  });
+
   it("records an inclusive radius catch once and freezes the dead fish", () => {
     const state = createSimulationState({
       fish: [makeFish({ x: 100, y: 100 })],

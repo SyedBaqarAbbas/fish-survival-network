@@ -7,6 +7,7 @@ const fakes = vi.hoisted(() => {
   class FakeReplayClient {
     disposed = false;
     loaded = false;
+    loadedSourceIds: string[] = [];
     played = false;
 
     constructor() {
@@ -21,8 +22,9 @@ const fakes = vi.hoisted(() => {
       return () => undefined;
     }
 
-    load() {
+    load(source: ReplaySource) {
       this.loaded = true;
+      this.loadedSourceIds.push(source.sourceId);
     }
 
     play() {
@@ -115,5 +117,20 @@ describe("ReplayTank", () => {
     second.unmount();
     expect(fakes.clients[1].disposed).toBe(true);
     expect(fakes.renderers[1].destroyed).toBe(true);
+  });
+
+  it("defers startup and loads only the source available when enabled", async () => {
+    vi.stubGlobal("Worker", class WorkerMock {});
+    const restoredSource = {
+      sourceId: "restored-source",
+    } as ReplaySource;
+    const view = render(<ReplayTank enabled={false} source={source} />);
+
+    expect(fakes.clients).toHaveLength(0);
+    view.rerender(<ReplayTank enabled source={restoredSource} />);
+
+    await waitFor(() => expect(view.getByRole("img")).toBeInTheDocument());
+    expect(fakes.clients).toHaveLength(1);
+    expect(fakes.clients[0].loadedSourceIds).toEqual([restoredSource.sourceId]);
   });
 });

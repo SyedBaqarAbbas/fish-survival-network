@@ -18,6 +18,7 @@ interface ReplayHarnessWindow extends Window {
 interface ReplayMappingCapture {
   type: "MAPPING";
   episodeId: number;
+  sourceId: string;
   world: { height: number; width: number };
   entries: Array<{ fishIndex: number; genomeId: string }>;
 }
@@ -26,6 +27,7 @@ interface ReplaySnapshotCapture {
   type: "SNAPSHOT";
   episodeId: number;
   sequence: number;
+  simulationTime: number;
   positions: Float32Array;
   alive: Uint8Array;
 }
@@ -102,7 +104,7 @@ async function analyzeCanvasFrames(
   );
 }
 
-test("renders and selects fish through the replay worker", async ({ page }) => {
+async function installWorkerHarness(page: Page) {
   await page.addInitScript(() => {
     const harness = window as unknown as ReplayHarnessWindow;
     const NativeWorker = window.Worker;
@@ -147,6 +149,10 @@ test("renders and selects fish through the replay worker", async ({ page }) => {
       }
     };
   });
+}
+
+test("renders and selects fish through the replay worker", async ({ page }) => {
+  await installWorkerHarness(page);
 
   await page.goto("/");
   const canvas = page.getByRole("img", {
@@ -425,4 +431,203 @@ test("renders and selects fish through the replay worker", async ({ page }) => {
       }),
     )
     .toEqual({ active: 1, leaked: 0 });
+});
+
+test("keeps the bundled replay alive past the evaluation horizon until restart", async ({
+  page,
+}) => {
+  test.setTimeout(45_000);
+  await installWorkerHarness(page);
+
+  await page.goto("/");
+  const canvas = page.getByRole("img", {
+    exact: true,
+    name: "Fish survival replay",
+  });
+  const tank = page.locator('section[aria-labelledby="tank-heading"]');
+  const fastSpeed = page.getByRole("button", { name: "2x" });
+
+  await expect(page.getByRole("heading", { name: "Bundled replay" })).toBeVisible();
+  await expect(canvas).toHaveAttribute("data-ready", "true");
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const replay = (window as unknown as ReplayHarnessWindow)
+          .__capturedWorkers.find(
+            (record) =>
+              record.name === "fish-survival-replay" && !record.terminated,
+          );
+        return replay?.events.some(
+          (event) =>
+            typeof event === "object" &&
+            event !== null &&
+            "type" in event &&
+            event.type === "MAPPING",
+        ) ?? false;
+      }),
+    )
+    .toBe(true);
+
+  const initialMapping = await page.evaluate(() => {
+    const replay = (window as unknown as ReplayHarnessWindow)
+      .__capturedWorkers.find(
+        (record) =>
+          record.name === "fish-survival-replay" && !record.terminated,
+      );
+    const mapping = replay?.events.find(
+      (event): event is ReplayMappingCapture =>
+        typeof event === "object" &&
+        event !== null &&
+        "type" in event &&
+        event.type === "MAPPING",
+    );
+    if (!mapping) throw new Error("The bundled replay mapping is unavailable.");
+    return { episodeId: mapping.episodeId, sourceId: mapping.sourceId };
+  });
+  expect(initialMapping.sourceId).toBe("bundled-level-6-v1:generation:37");
+
+  await fastSpeed.click();
+  await expect(fastSpeed).toHaveAttribute("aria-pressed", "true");
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const replay = (window as unknown as ReplayHarnessWindow)
+          .__capturedWorkers.find(
+            (record) =>
+              record.name === "fish-survival-replay" && !record.terminated,
+          );
+        return replay?.commands.some(
+          (command) =>
+            typeof command === "object" &&
+            command !== null &&
+            "type" in command &&
+            command.type === "SPEED" &&
+            "speed" in command &&
+            command.speed === 2,
+        ) ?? false;
+      }),
+    )
+    .toBe(true);
+  await expect
+    .poll(
+      () =>
+        page.evaluate((episodeId) => {
+          const replay = (window as unknown as ReplayHarnessWindow)
+            .__capturedWorkers.find(
+              (record) =>
+                record.name === "fish-survival-replay" && !record.terminated,
+            );
+          const snapshot = replay?.events.findLast(
+            (event): event is ReplaySnapshotCapture =>
+              typeof event === "object" &&
+              event !== null &&
+              "type" in event &&
+              event.type === "SNAPSHOT" &&
+              "episodeId" in event &&
+              event.episodeId === episodeId,
+          );
+          return snapshot?.simulationTime ?? 0;
+        }, initialMapping.episodeId),
+      { timeout: 30_000 },
+    )
+    .toBeGreaterThan(15);
+
+  const continued = await page.evaluate((episodeId) => {
+    const replay = (window as unknown as ReplayHarnessWindow)
+      .__capturedWorkers.find(
+        (record) =>
+          record.name === "fish-survival-replay" && !record.terminated,
+      );
+    if (!replay) throw new Error("The active replay worker is unavailable.");
+    const mappings = replay.events.filter(
+      (event): event is ReplayMappingCapture =>
+        typeof event === "object" &&
+        event !== null &&
+        "type" in event &&
+        event.type === "MAPPING",
+    );
+    const snapshot = replay.events.findLast(
+      (event): event is ReplaySnapshotCapture =>
+        typeof event === "object" &&
+        event !== null &&
+        "type" in event &&
+        event.type === "SNAPSHOT" &&
+        "episodeId" in event &&
+        event.episodeId === episodeId,
+    );
+    if (!snapshot) throw new Error("A post-horizon snapshot is unavailable.");
+    return {
+      episodeEndCount: replay.events.filter(
+        (event) =>
+          typeof event === "object" &&
+          event !== null &&
+          "type" in event &&
+          event.type === "EPISODE_END",
+      ).length,
+      mappingCount: mappings.length,
+      simulationTime: snapshot.simulationTime,
+      snapshotEpisodeId: snapshot.episodeId,
+      survivors: snapshot.alive.reduce((count, alive) => count + alive, 0),
+    };
+  }, initialMapping.episodeId);
+
+  expect(continued).toMatchObject({
+    episodeEndCount: 0,
+    mappingCount: 1,
+    snapshotEpisodeId: initialMapping.episodeId,
+  });
+  expect(continued.simulationTime).toBeGreaterThan(15);
+  expect(continued.survivors).toBeGreaterThan(0);
+  await expect(tank).toContainText(/\d+ \/ 48 fish left/);
+  await expect(page.getByRole("button", { name: "Pause replay" })).toBeVisible();
+  await expect(page.getByText("Playing", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Restart replay" }).click();
+  await expect
+    .poll(() =>
+      page.evaluate((previousEpisodeId) => {
+        const replay = (window as unknown as ReplayHarnessWindow)
+          .__capturedWorkers.find(
+            (record) =>
+              record.name === "fish-survival-replay" && !record.terminated,
+          );
+        const mapping = replay?.events.findLast(
+          (event): event is ReplayMappingCapture =>
+            typeof event === "object" &&
+            event !== null &&
+            "type" in event &&
+            event.type === "MAPPING",
+        );
+        if (!mapping || mapping.episodeId <= previousEpisodeId) return null;
+        const initialSnapshot = replay?.events.find(
+          (event): event is ReplaySnapshotCapture =>
+            typeof event === "object" &&
+            event !== null &&
+            "type" in event &&
+            event.type === "SNAPSHOT" &&
+            "episodeId" in event &&
+            event.episodeId === mapping.episodeId &&
+            "simulationTime" in event &&
+            event.simulationTime === 0,
+        );
+        const restartSent = replay?.commands.some(
+          (command) =>
+            typeof command === "object" &&
+            command !== null &&
+            "type" in command &&
+            command.type === "RESTART",
+        );
+        return initialSnapshot && restartSent
+          ? {
+              episodeId: mapping.episodeId,
+              simulationTime: initialSnapshot.simulationTime,
+            }
+          : null;
+      }, initialMapping.episodeId),
+    )
+    .toEqual({
+      episodeId: initialMapping.episodeId + 1,
+      simulationTime: 0,
+    });
+  await expect(page.getByRole("button", { name: "Pause replay" })).toBeVisible();
 });

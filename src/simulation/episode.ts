@@ -17,9 +17,16 @@ export interface EpisodeStats {
   predatorWallCollisions: number;
 }
 
+export type EpisodeEndCondition = "duration" | "all-fish-caught";
+
+export interface SimulationStateOptions {
+  endCondition?: EpisodeEndCondition;
+}
+
 export interface SimulationState {
   step: number;
   elapsedSeconds: number;
+  endCondition: EpisodeEndCondition;
   finished: boolean;
   fish: AgentState[];
   predator: AgentState;
@@ -33,6 +40,7 @@ export interface SimulationState {
 export interface EpisodeControllerContext {
   readonly step: number;
   readonly elapsedSeconds: number;
+  readonly endCondition: EpisodeEndCondition;
   readonly finished: boolean;
   readonly fish: readonly Readonly<AgentState>[];
   readonly predator: Readonly<AgentState>;
@@ -65,9 +73,13 @@ function cloneAgent(agent: Readonly<AgentState>): AgentState {
 export function createSimulationState(
   layout: Readonly<SpawnLayout>,
   world: Readonly<WorldConfig> = WORLD_CONFIG,
+  { endCondition = "duration" }: Readonly<SimulationStateOptions> = {},
 ): SimulationState {
   if (layout.fish.length === 0) {
     throw new RangeError("A simulation requires at least one fish.");
+  }
+  if (endCondition !== "duration" && endCondition !== "all-fish-caught") {
+    throw new RangeError("A simulation end condition must be duration or all-fish-caught.");
   }
 
   const ownedWorld = Object.freeze({ ...world });
@@ -79,6 +91,7 @@ export function createSimulationState(
   return {
     step: 0,
     elapsedSeconds: 0,
+    endCondition,
     finished: false,
     fish: layout.fish.map(cloneAgent),
     predator: cloneAgent(layout.predator),
@@ -143,7 +156,10 @@ export function stepSimulation(
 
   state.step = nextStep;
   state.elapsedSeconds = state.step * state.world.fixedDt;
-  state.finished = state.step >= state.episodeStepCount;
+  state.finished =
+    state.endCondition === "all-fish-caught"
+      ? state.stats.catchCount === state.fish.length
+      : state.step >= state.episodeStepCount;
   return true;
 }
 
