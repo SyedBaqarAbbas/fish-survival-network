@@ -1,87 +1,112 @@
 import { render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { createDemoReplaySource, type ReplaySource } from "@/replay";
+import type { TrainerWorkerState } from "@/workers/useTrainerWorker";
+
+const { useTrainerWorkerMock } = vi.hoisted(() => ({
+  useTrainerWorkerMock: vi.fn(),
+}));
+
+vi.mock("@/workers/useTrainerWorker", () => ({
+  useTrainerWorker: useTrainerWorkerMock,
+}));
 
 vi.mock("@/components/ReplayTank/ReplayTank", () => ({
-  ReplayTank: () => <div data-testid="replay-tank" />,
+  ReplayTank: ({ source }: { source: ReplaySource }) => (
+    <div
+      data-entry-count={source.entries.length}
+      data-level={source.level}
+      data-source-id={source.sourceId}
+      data-testid="replay-tank"
+    />
+  ),
 }));
 
 import { EvolutionLab } from "./EvolutionLab";
 
-class ReadyWorkerMock {
-  private readonly messageListeners = new Set<(event: MessageEvent) => void>();
-
-  addEventListener(type: string, listener: EventListener) {
-    if (type === "message") {
-      this.messageListeners.add(listener as (event: MessageEvent) => void);
-    }
-  }
-
-  removeEventListener(type: string, listener: EventListener) {
-    if (type === "message") {
-      this.messageListeners.delete(listener as (event: MessageEvent) => void);
-    }
-  }
-
-  postMessage() {
-    queueMicrotask(() => {
-      const event = new MessageEvent("message", {
-        data: {
-          type: "READY",
-          protocolVersion: 1,
-          checkpointSchemaVersion: 1,
-          runId: "test-run",
-          generation: 0,
-          level: 0,
-          status: "paused",
-          restored: false,
-        },
-      });
-      this.messageListeners.forEach((listener) => listener(event));
-    });
-  }
-
-  terminate() {}
+function workerState(
+  overrides: Partial<TrainerWorkerState> = {},
+): TrainerWorkerState {
+  return {
+    status: "ready",
+    recovered: false,
+    start: vi.fn(),
+    pause: vi.fn(),
+    reset: vi.fn(),
+    setCurriculum: vi.fn(),
+    requestCheckpoint: vi.fn(),
+    ...overrides,
+  };
 }
 
 describe("EvolutionLab", () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
+  beforeEach(() => {
+    useTrainerWorkerMock.mockReset();
+    useTrainerWorkerMock.mockReturnValue(workerState());
   });
 
-  it("reports a ready training worker", async () => {
-    vi.stubGlobal("Worker", ReadyWorkerMock);
+  it("reports a ready training worker", () => {
+    render(<EvolutionLab starterReplaySource={createDemoReplaySource(1)} />);
 
-    render(<EvolutionLab />);
-
-    expect(await screen.findByText("Ready")).toBeInTheDocument();
+    expect(screen.getByText("Ready")).toBeInTheDocument();
     expect(screen.getByTestId("worker-status")).toHaveAttribute(
       "data-state",
       "ready",
     );
   });
 
-  it("reports browsers without worker support", async () => {
-    vi.stubGlobal("Worker", undefined);
+  it("reports browsers without worker support", () => {
+    useTrainerWorkerMock.mockReturnValue(workerState({ status: "unsupported" }));
 
-    render(<EvolutionLab />);
+    render(<EvolutionLab starterReplaySource={createDemoReplaySource(2)} />);
 
-    expect(await screen.findByText("Unavailable")).toBeInTheDocument();
+    expect(screen.getByText("Unavailable")).toBeInTheDocument();
   });
 
-  it("reports a worker that is blocked during construction", async () => {
-    class BlockedWorkerMock {
-      constructor() {
-        throw new Error("Blocked by browser policy.");
-      }
-    }
-    vi.stubGlobal("Worker", BlockedWorkerMock);
+  it("reports a worker construction error", () => {
+    useTrainerWorkerMock.mockReturnValue(
+      workerState({ status: "error", error: "Blocked by browser policy." }),
+    );
 
-    render(<EvolutionLab />);
+    render(<EvolutionLab starterReplaySource={createDemoReplaySource(3)} />);
 
-    expect(await screen.findByText("Error")).toBeInTheDocument();
+    expect(screen.getByText("Error")).toBeInTheDocument();
     expect(screen.getByTestId("worker-status")).toHaveAttribute(
       "title",
       "Blocked by browser policy.",
+    );
+  });
+
+  it("uses the bundled starter replay until local training has a roster", () => {
+    const starter = { ...createDemoReplaySource(101), generation: 37 };
+    useTrainerWorkerMock.mockReturnValue(workerState({ generation: 0 }));
+
+    render(<EvolutionLab starterReplaySource={starter} />);
+
+    expect(screen.getByTestId("replay-tank")).toHaveAttribute(
+      "data-source-id",
+      starter.sourceId,
+    );
+    expect(screen.getByTestId("replay-tank")).toHaveAttribute(
+      "data-entry-count",
+      "48",
+    );
+    expect(screen.getByText("37")).toBeInTheDocument();
+  });
+
+  it("gives a restored local replay roster precedence over the starter", () => {
+    const starter = createDemoReplaySource(201);
+    const local = createDemoReplaySource(202);
+    useTrainerWorkerMock.mockReturnValue(
+      workerState({ replaySource: local, generation: 4, level: 6 }),
+    );
+
+    render(<EvolutionLab starterReplaySource={starter} />);
+
+    expect(screen.getByTestId("replay-tank")).toHaveAttribute(
+      "data-source-id",
+      local.sourceId,
     );
   });
 });

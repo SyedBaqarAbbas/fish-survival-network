@@ -32,10 +32,9 @@ npm run test:watch   # Run Vitest in watch mode
 npm run test:e2e     # Run Playwright against the local app
 npm run evolve:once  # Evaluate/reproduce one default 256 × 8 generation
 npm run simulate     # Run a deterministic scripted episode (optional seed argument)
-npm run train:starter # Check the starter-training command scaffold
+npm run train:starter # Regenerate the pinned Level 6 starter artifact
+npm run validate:starter # Validate starter scores, structure, and checksums
 ```
-
-The starter command is intentionally non-mutating until the trained checkpoint is generated under `FIS-11`; it reports the checkpoint schema reserved by the foundation.
 
 ## Architecture
 
@@ -47,6 +46,7 @@ src/evolution/    Genome and training contracts
 src/replay/       Replay source, protocol, worker engine, and browser client
 src/rendering/    Imperative PixiJS scene, interpolation, and interaction
 src/persistence/  Versioned checkpoint codec and IndexedDB repository
+src/starter/      Bundled checkpoint recipe, validation, and server loader
 src/workers/      Typed protocol, cooperative engine, and recovery client
 tests/e2e/        Browser-level verification
 ```
@@ -70,6 +70,20 @@ Run one complete default generation with:
 ```bash
 npm run evolve:once -- 42
 ```
+
+## Bundled Level 6 Starter
+
+A clean first launch replays the checked-in Level 6 checkpoint immediately. The server validates the complete artifact, then sends an owned clone of only its ranked 48-fish replay source to the client. Local training still starts or resumes independently through IndexedDB and never mutates the bundled source.
+
+The artifact is generated with run seed `85622289`. The fixed recipe trains three generations at each level from 0 through 5, then twenty generations at Level 6. It always selects the champion from evaluated generation 37 and stores generation 38 as the resumable state; held-out results never control the stopping point.
+
+```bash
+npm run validate:starter
+```
+
+The pinned validation result is 7 survivors across 8 held-out episodes with `13.447916666666666` mean alive seconds. The artifact SHA-256 is `f9d2c8e671da1bbd40ff2c5143366446083cfd30101e29d214c1d75fb53f0212`; the champion Float32 parameter SHA-256 is `9cc42380e7c336eba899458a4fcaf1fa97bdf415cc00adfd21464380f2a6cbb3`.
+
+Regeneration takes roughly 35 seconds on the development machine. The command writes canonical formatted JSON and its checksum sidecar only after the complete checkpoint passes structural and held-out validation.
 
 ## Training And Checkpoints
 

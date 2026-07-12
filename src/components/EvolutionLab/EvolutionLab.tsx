@@ -1,12 +1,9 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useState } from "react";
 
 import { ReplayTank } from "@/components/ReplayTank/ReplayTank";
-import {
-  createDemoReplaySource,
-  type ReplayMappingEvent,
-} from "@/replay";
+import type { ReplayMappingEvent, ReplaySource } from "@/replay";
 import { useTrainerWorker } from "@/workers/useTrainerWorker";
 
 import styles from "./EvolutionLab.module.css";
@@ -97,17 +94,20 @@ function NetworkScaffold() {
   );
 }
 
-export function EvolutionLab() {
+export interface EvolutionLabProps {
+  starterReplaySource: ReplaySource;
+}
+
+export function EvolutionLab({ starterReplaySource }: EvolutionLabProps) {
   const worker = useTrainerWorker();
-  const demoReplaySource = useMemo(() => createDemoReplaySource(42), []);
-  const replaySource = worker.replaySource ?? demoReplaySource;
+  const replaySource = worker.replaySource ?? starterReplaySource;
   const [aliveCount, setAliveCount] = useState(48);
   const [replayLevel, setReplayLevel] = useState(replaySource.level);
   const handleReplayMapping = useCallback(
     (mapping: Readonly<ReplayMappingEvent>) => setReplayLevel(mapping.level),
     [],
   );
-  const generation = worker.generation ?? replaySource.generation;
+  const generation = replaySource.generation;
   const bestFitness = worker.latestMetric?.bestFitness;
   const meanFitness = worker.latestMetric?.meanFitness;
 

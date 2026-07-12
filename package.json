@@ -14,7 +14,8 @@
     "test:e2e": "playwright test",
     "evolve:once": "node --import tsx scripts/run-evolution-generation.ts",
     "simulate": "node --import tsx scripts/run-scripted-episode.ts",
-    "train:starter": "node --import tsx scripts/train-starter.ts"
+    "train:starter": "node --import tsx scripts/train-starter.ts",
+    "validate:starter": "node --import tsx scripts/validate-starter.ts"
   },
   "engines": {
     "node": ">=20.19"
