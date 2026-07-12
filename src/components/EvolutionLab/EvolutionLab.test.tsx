@@ -1,6 +1,10 @@
 import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@/components/ReplayTank/ReplayTank", () => ({
+  ReplayTank: () => <div data-testid="replay-tank" />,
+}));
+
 import { EvolutionLab } from "./EvolutionLab";
 
 class ReadyWorkerMock {

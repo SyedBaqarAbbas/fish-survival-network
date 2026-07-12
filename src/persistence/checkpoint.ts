@@ -8,6 +8,11 @@ import {
   type EvolutionRunState,
   type NetworkGenome,
 } from "@/evolution/types";
+import {
+  REPLAY_FISH_COUNT,
+  type ReplaySource,
+  type ReplaySourceEntry,
+} from "@/replay";
 import { getEpisodeStepCount } from "@/simulation/config";
 import { deriveEpisodeSeed } from "@/simulation/random";
 
@@ -147,6 +152,21 @@ const NetworkGenomeCodec = z.strictObject({
   outputBias: createFloat32VectorCodec(2),
 });
 
+const ReplaySourceEntryCodec = z.strictObject({
+  genome: NetworkGenomeCodec,
+  fitness: z.number().finite().nullable(),
+  survivalRate: z.number().finite().min(0).max(1).nullable(),
+});
+
+const ReplaySourceCodec = z.strictObject({
+  sourceId: z.string().trim().min(1).max(256),
+  runId: z.string().trim().min(1).max(128),
+  generation: z.uint32(),
+  level: CurriculumLevelSchema,
+  championGenomeId: z.string().trim().min(1).max(128),
+  entries: z.array(ReplaySourceEntryCodec).length(REPLAY_FISH_COUNT),
+});
+
 const FitnessStatsSchema = z.strictObject({
   aliveSeconds: z.number().finite().nonnegative(),
   survived: z.boolean(),
@@ -209,6 +229,7 @@ const DecodedCheckpointSchema = z
       config: EvolutionConfigSchema,
     }),
     metricHistory: z.array(GenerationMetricSchema),
+    replaySource: ReplaySourceCodec.optional(),
   })
   .superRefine((checkpoint, context) => {
     try {
@@ -355,6 +376,43 @@ const DecodedCheckpointSchema = z
         });
       }
     });
+
+    const replaySource = checkpoint.replaySource;
+    if (replaySource) {
+      if (replaySource.runId !== checkpoint.runId) {
+        context.addIssue({
+          code: "custom",
+          path: ["replaySource", "runId"],
+          message: "Replay source runId must match the checkpoint runId.",
+        });
+      }
+      if (replaySource.generation > evolution.generation) {
+        context.addIssue({
+          code: "custom",
+          path: ["replaySource", "generation"],
+          message: "Replay source generation cannot be ahead of the checkpoint.",
+        });
+      }
+
+      const replayGenomeIds = new Set<string>();
+      replaySource.entries.forEach((entry, entryIndex) => {
+        if (replayGenomeIds.has(entry.genome.id)) {
+          context.addIssue({
+            code: "custom",
+            path: ["replaySource", "entries", entryIndex, "genome", "id"],
+            message: `Duplicate replay genome id ${entry.genome.id}.`,
+          });
+        }
+        replayGenomeIds.add(entry.genome.id);
+      });
+      if (!replayGenomeIds.has(replaySource.championGenomeId)) {
+        context.addIssue({
+          code: "custom",
+          path: ["replaySource", "championGenomeId"],
+          message: "Replay champion must be present in the ordered roster.",
+        });
+      }
+    }
   });
 
 export const RunCheckpointCodec = DecodedCheckpointSchema;
@@ -410,13 +468,52 @@ function toDecodedGenome(
   };
 }
 
+function toDecodedReplayEntry(
+  entry: Readonly<ReplaySourceEntry>,
+): z.output<typeof ReplaySourceEntryCodec> {
+  return {
+    genome: toDecodedGenome(entry.genome),
+    fitness: entry.fitness,
+    survivalRate: entry.survivalRate,
+  };
+}
+
+function toDecodedReplaySource(
+  source: Readonly<ReplaySource>,
+): z.output<typeof ReplaySourceCodec> {
+  return {
+    sourceId: source.sourceId,
+    runId: source.runId,
+    generation: source.generation,
+    level: source.level,
+    championGenomeId: source.championGenomeId,
+    entries: source.entries.map(toDecodedReplayEntry),
+  };
+}
+
+function sameWorld(
+  first: Readonly<ReplaySource["world"]>,
+  second: Readonly<ReplaySource["world"]>,
+) {
+  return (
+    first.width === second.width &&
+    first.height === second.height &&
+    first.fixedDt === second.fixedDt &&
+    first.episodeSeconds === second.episodeSeconds
+  );
+}
+
 function toDecodedCheckpoint({
   runId,
   savedAt = new Date().toISOString(),
   world,
   state,
   metricHistory,
+  replaySource,
 }: CreateRunCheckpointOptions): DecodedRunCheckpoint {
+  if (replaySource && !sameWorld(replaySource.world, world)) {
+    throw new RangeError("Replay source world must match the checkpoint world.");
+  }
   return {
     schemaVersion: CHECKPOINT_SCHEMA_VERSION,
     kind: RUN_CHECKPOINT_KIND,
@@ -436,6 +533,9 @@ function toDecodedCheckpoint({
       config: { ...state.config },
     },
     metricHistory: metricHistory.map((metric) => ({ ...metric })),
+    ...(replaySource
+      ? { replaySource: toDecodedReplaySource(replaySource) }
+      : {}),
   };
 }
 
@@ -467,6 +567,18 @@ function restoreDecodedCheckpoint(
     metricHistory: checkpoint.metricHistory.map(
       (metric): GenerationMetric => ({ ...metric }),
     ),
+    ...(checkpoint.replaySource
+      ? {
+          replaySource: {
+            ...checkpoint.replaySource,
+            world: { ...checkpoint.world },
+            entries: checkpoint.replaySource.entries.map((entry) => ({
+              ...entry,
+              genome: entry.genome as NetworkGenome,
+            })),
+          } as ReplaySource,
+        }
+      : {}),
   };
 }
 
@@ -547,6 +659,48 @@ export function restoreRunCheckpoint(value: unknown): RestoredRunCheckpoint {
 }
 
 export const hydrateRunCheckpoint = restoreRunCheckpoint;
+
+export function restoreCheckpointReplaySource(
+  checkpoint: Pick<RunCheckpoint, "replaySource" | "world">,
+): ReplaySource | undefined {
+  const source = checkpoint.replaySource;
+  if (!source) return undefined;
+
+  return {
+    sourceId: source.sourceId,
+    runId: source.runId,
+    generation: source.generation,
+    level: source.level,
+    world: { ...checkpoint.world },
+    championGenomeId: source.championGenomeId,
+    entries: source.entries.map((entry) => ({
+      fitness: entry.fitness,
+      survivalRate: entry.survivalRate,
+      genome: {
+        id: entry.genome.id,
+        inputCount: entry.genome.inputCount,
+        hiddenCount: entry.genome.hiddenCount,
+        outputCount: entry.genome.outputCount,
+        inputToHidden: decodeFloat32Vector(
+          entry.genome.inputToHidden.data,
+          entry.genome.inputToHidden.length,
+        ),
+        hiddenBias: decodeFloat32Vector(
+          entry.genome.hiddenBias.data,
+          entry.genome.hiddenBias.length,
+        ),
+        hiddenToOutput: decodeFloat32Vector(
+          entry.genome.hiddenToOutput.data,
+          entry.genome.hiddenToOutput.length,
+        ),
+        outputBias: decodeFloat32Vector(
+          entry.genome.outputBias.data,
+          entry.genome.outputBias.length,
+        ),
+      },
+    })),
+  };
+}
 
 export function isRunCheckpoint(value: unknown): value is RunCheckpoint {
   return parseRunCheckpoint(value).success;

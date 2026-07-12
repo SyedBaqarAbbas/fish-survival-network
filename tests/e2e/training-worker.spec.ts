@@ -1,8 +1,14 @@
 import { expect, test } from "@playwright/test";
 
+interface CapturedWorkerRecord {
+  commands: unknown[];
+  name: string;
+  url: string;
+  worker: Worker;
+}
+
 interface TrainerHarnessWindow extends Window {
-  __trainerCommands: unknown[];
-  __trainerWorkers: Worker[];
+  __capturedWorkers: CapturedWorkerRecord[];
   __trainingLongTasks: number[];
 }
 
@@ -10,21 +16,28 @@ test("trains a generation off the main thread", async ({ page }) => {
   await page.addInitScript(() => {
     const harness = window as unknown as TrainerHarnessWindow;
     const NativeWorker = window.Worker;
-    harness.__trainerCommands = [];
-    harness.__trainerWorkers = [];
+    harness.__capturedWorkers = [];
     harness.__trainingLongTasks = [];
 
-    window.Worker = class CapturedWorker extends NativeWorker {
+    window.Worker = class InstrumentedWorker extends NativeWorker {
+      private record?: CapturedWorkerRecord;
+
       constructor(url: string | URL, options?: WorkerOptions) {
         super(url, options);
-        harness.__trainerWorkers.push(this);
+        this.record = {
+          commands: [],
+          name: options?.name ?? "",
+          url: String(url),
+          worker: this,
+        };
+        harness.__capturedWorkers.push(this.record);
       }
 
       override postMessage(
         message: unknown,
         options?: StructuredSerializeOptions | Transferable[],
       ) {
-        harness.__trainerCommands.push(structuredClone(message));
+        this.record?.commands.push(structuredClone(message));
         if (options === undefined) {
           super.postMessage(message);
         } else if (Array.isArray(options)) {
@@ -49,10 +62,15 @@ test("trains a generation off the main thread", async ({ page }) => {
     "data-state",
     "ready",
   );
+  await expect(
+    page.getByRole("img", { exact: true, name: "Fish survival replay" }),
+  ).toHaveAttribute("data-ready", "true");
 
   const result = await page.evaluate(async () => {
     const harness = window as unknown as TrainerHarnessWindow;
-    const worker = harness.__trainerWorkers.at(-1);
+    const worker = harness.__capturedWorkers.find(
+      (candidate) => candidate.name === "fish-survival-trainer",
+    )?.worker;
     if (!worker) throw new Error("Trainer worker was not created.");
     harness.__trainingLongTasks.length = 0;
 
@@ -128,13 +146,17 @@ test("trains a generation off the main thread", async ({ page }) => {
   expect(
     await page.evaluate(() => {
       const harness = window as unknown as TrainerHarnessWindow;
-      const initialize = harness.__trainerCommands.find(
+      const initialize = harness.__capturedWorkers
+        .find((worker) => worker.name === "fish-survival-trainer")
+        ?.commands.find(
         (command) =>
           typeof command === "object" &&
           command !== null &&
           "type" in command &&
           command.type === "INITIALIZE",
-      ) as { checkpoint?: { evolution?: { generation?: number } } } | undefined;
+        ) as
+        | { checkpoint?: { evolution?: { generation?: number } } }
+        | undefined;
       return initialize?.checkpoint?.evolution?.generation;
     }),
   ).toBe(1);

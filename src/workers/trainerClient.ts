@@ -1,10 +1,12 @@
 import type { EvolutionConfig } from "@/evolution";
-import type {
-  CheckpointRepository,
-  GenerationMetric,
-  PersistenceWarning,
-  RunCheckpoint,
+import {
+  restoreCheckpointReplaySource,
+  type CheckpointRepository,
+  type GenerationMetric,
+  type PersistenceWarning,
+  type RunCheckpoint,
 } from "@/persistence";
+import type { ReplaySource } from "@/replay";
 import type { CurriculumLevel, WorldConfig } from "@/simulation/types";
 
 import { createTrainerWorker } from "./createTrainerWorker";
@@ -39,6 +41,7 @@ export interface TrainerClientState {
   level?: CurriculumLevel;
   progress?: TrainerProgress;
   latestMetric?: GenerationMetric;
+  replaySource?: ReplaySource;
   warning?: PersistenceWarning;
   error?: string;
   recovered: boolean;
@@ -104,6 +107,7 @@ export class TrainerClient {
       if (this.disposed || initializationToken !== this.workerToken) return;
       this.lastCheckpoint = loaded.checkpoint;
       if (loaded.checkpoint) {
+        const replaySource = restoreCheckpointReplaySource(loaded.checkpoint);
         this.freshRun = {
           runId: loaded.checkpoint.runId,
           runSeed: loaded.checkpoint.evolution.runSeed,
@@ -115,6 +119,7 @@ export class TrainerClient {
           generation: loaded.checkpoint.evolution.generation,
           level: loaded.checkpoint.evolution.curriculum.level,
           latestMetric: loaded.checkpoint.metricHistory.at(-1),
+          replaySource,
         });
       }
       if (loaded.warning) this.patchState({ warning: loaded.warning });
@@ -310,11 +315,13 @@ export class TrainerClient {
   private acceptCheckpoint(
     event: Extract<TrainerEvent, { type: "CHECKPOINT" }>,
   ) {
+    const replaySource = restoreCheckpointReplaySource(event.checkpoint);
     this.lastCheckpoint = event.checkpoint;
     this.patchState({
       runId: event.runId,
       generation: event.checkpoint.evolution.generation,
       level: event.checkpoint.evolution.curriculum.level,
+      replaySource,
       error: undefined,
     });
     void this.persistence.saveActive(event.checkpoint).then((result) => {

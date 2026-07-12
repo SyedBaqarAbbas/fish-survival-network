@@ -1,5 +1,6 @@
 import {
   completeEvaluatedGeneration,
+  cloneGenome,
   createEvolutionRun,
   deriveGenerationEpisodeSeeds,
   evaluateGenome,
@@ -15,6 +16,7 @@ import {
   type GenerationMetric,
   type RunCheckpoint,
 } from "@/persistence";
+import { REPLAY_FISH_COUNT, type ReplaySource } from "@/replay";
 import { WORLD_CONFIG } from "@/simulation/config";
 import type { CurriculumLevel, WorldConfig } from "@/simulation/types";
 
@@ -41,6 +43,7 @@ interface ActiveRun {
   state: EvolutionRunState;
   metricHistory: GenerationMetric[];
   lastCheckpoint: RunCheckpoint;
+  replaySource?: ReplaySource;
 }
 
 interface PartialGeneration {
@@ -76,6 +79,41 @@ function finiteMean(values: readonly number[]) {
   const finite = values.filter(Number.isFinite);
   if (finite.length === 0) return 0;
   return finite.reduce((sum, value) => sum + value, 0) / finite.length;
+}
+
+function createRankedReplaySource(
+  run: Readonly<ActiveRun>,
+  evaluation: Readonly<PopulationEvaluation>,
+  ranked: readonly Readonly<GenomeEvaluation>[],
+): ReplaySource | undefined {
+  if (ranked.length < REPLAY_FISH_COUNT) return undefined;
+
+  const entries = ranked.slice(0, REPLAY_FISH_COUNT).map((item) => {
+    const genome = run.state.population[item.populationIndex];
+    if (!genome || genome.id !== item.genomeId) {
+      throw new Error(`Replay ranking does not match genome ${item.genomeId}.`);
+    }
+    const survivalRate =
+      Number.isFinite(item.survivalRate) &&
+      item.survivalRate >= 0 &&
+      item.survivalRate <= 1
+        ? item.survivalRate
+        : null;
+    return {
+      genome: cloneGenome(genome),
+      fitness: Number.isFinite(item.fitness) ? item.fitness : null,
+      survivalRate,
+    };
+  });
+  return {
+    sourceId: `${run.runId}:generation:${evaluation.generation}`,
+    runId: run.runId,
+    generation: evaluation.generation,
+    level: evaluation.level,
+    world: cloneWorld(run.world),
+    championGenomeId: ranked[0].genomeId,
+    entries,
+  };
 }
 
 export class TrainerEngine {
@@ -157,12 +195,14 @@ export class TrainerEngine {
           world: cloneWorld(checkpoint.world),
           state: checkpoint.state,
           metricHistory: [...checkpoint.metricHistory],
+          replaySource: checkpoint.replaySource,
           lastCheckpoint: createRunCheckpoint({
             runId: checkpoint.runId,
             savedAt: checkpoint.savedAt,
             world: checkpoint.world,
             state: checkpoint.state,
             metricHistory: checkpoint.metricHistory,
+            replaySource: checkpoint.replaySource,
           }),
         };
         restored = true;
@@ -310,6 +350,7 @@ export class TrainerEngine {
         world: this.run.world,
         state,
         metricHistory: this.run.metricHistory,
+        replaySource: this.run.replaySource,
       });
       this.run.state = state;
       this.partial = undefined;
@@ -451,6 +492,11 @@ export class TrainerEngine {
     const previousLevel = run.state.curriculum.level;
     const result = completeEvaluatedGeneration(run.state, evaluation);
     const best = result.ranked[0];
+    const replaySource = createRankedReplaySource(
+      run,
+      evaluation,
+      result.ranked,
+    );
     const metric: GenerationMetric = {
       generation: evaluation.generation,
       level: evaluation.level,
@@ -468,10 +514,12 @@ export class TrainerEngine {
       world: run.world,
       state: result.state,
       metricHistory,
+      replaySource,
     });
 
     run.state = result.state;
     run.metricHistory = metricHistory;
+    run.replaySource = replaySource;
     run.lastCheckpoint = checkpoint;
     this.partial = undefined;
     this.emit({ type: "GENERATION", runId: run.runId, metric });

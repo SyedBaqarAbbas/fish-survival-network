@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
+import { DEFAULT_EVOLUTION_CONFIG } from "@/evolution/config";
 import { createEvolutionRun } from "@/evolution/population";
 import type { NetworkGenome } from "@/evolution/types";
+import type { ReplaySource } from "@/replay";
 
 import {
   CheckpointValidationError,
@@ -27,6 +29,39 @@ function parameterBytes(genome: Readonly<NetworkGenome>) {
 
 function cloneCheckpoint(checkpoint: RunCheckpoint) {
   return structuredClone(checkpoint);
+}
+
+function makeReplayCheckpoint() {
+  const state = createEvolutionRun({
+    runSeed: 91,
+    config: {
+      ...DEFAULT_EVOLUTION_CONFIG,
+      populationSize: 48,
+      episodesPerGenome: 1,
+    },
+  });
+  const replaySource: ReplaySource = {
+    sourceId: "test-run:generation:0",
+    runId: "test-run",
+    generation: 0,
+    level: 0,
+    world: { ...SHORT_TEST_WORLD },
+    championGenomeId: state.population[0].id,
+    entries: state.population.map((genome, index) => ({
+      genome,
+      fitness: index % 2 === 0 ? 100 - index : null,
+      survivalRate: index % 3 === 0 ? index / 48 : null,
+    })),
+  };
+  const checkpoint = createRunCheckpoint({
+    runId: "test-run",
+    savedAt: "2026-07-12T00:00:00.000Z",
+    world: SHORT_TEST_WORLD,
+    state,
+    metricHistory: [],
+    replaySource,
+  });
+  return { checkpoint, replaySource };
 }
 
 describe("run checkpoint codec", () => {
@@ -81,6 +116,101 @@ describe("run checkpoint codec", () => {
     expect(again.world.width).toBe(SHORT_TEST_WORLD.width);
     expect(again.metricHistory[0].bestFitness).not.toBe(-100);
     expect(Object.isFrozen(again.state.config)).toBe(true);
+  });
+
+  it("round-trips an ordered replay roster with byte-exact owned genomes", () => {
+    const { checkpoint, replaySource } = makeReplayCheckpoint();
+    expect(checkpoint.replaySource?.entries).toHaveLength(48);
+    expect(checkpoint.replaySource).not.toHaveProperty("world");
+
+    const restored = restoreRunCheckpoint(
+      JSON.parse(JSON.stringify(checkpoint)) as unknown,
+    );
+    expect(restored.replaySource).toMatchObject({
+      sourceId: replaySource.sourceId,
+      runId: replaySource.runId,
+      generation: replaySource.generation,
+      level: replaySource.level,
+      world: SHORT_TEST_WORLD,
+      championGenomeId: replaySource.championGenomeId,
+    });
+    expect(
+      restored.replaySource?.entries.map((entry) => entry.genome.id),
+    ).toEqual(replaySource.entries.map((entry) => entry.genome.id));
+    replaySource.entries.forEach((entry, entryIndex) => {
+      parameterBytes(entry.genome).forEach((bytes, vectorIndex) => {
+        expect(
+          parameterBytes(
+            restored.replaySource?.entries[entryIndex].genome as NetworkGenome,
+          )[vectorIndex],
+        ).toEqual(bytes);
+      });
+    });
+
+    const firstWeight = replaySource.entries[0].genome.inputToHidden[0];
+    if (!restored.replaySource) throw new Error("Missing restored replay source.");
+    restored.replaySource.entries[0].genome.inputToHidden[0] = 4;
+    expect(
+      restoreRunCheckpoint(checkpoint).replaySource?.entries[0].genome
+        .inputToHidden[0],
+    ).toBe(firstWeight);
+  });
+
+  it("validates replay roster size, identity, metadata, and checkpoint affinity", () => {
+    const rosterSize = cloneCheckpoint(makeReplayCheckpoint().checkpoint);
+    rosterSize.replaySource?.entries.pop();
+    expect(isRunCheckpoint(rosterSize)).toBe(false);
+
+    const duplicate = cloneCheckpoint(makeReplayCheckpoint().checkpoint);
+    if (!duplicate.replaySource) throw new Error("Missing replay source.");
+    duplicate.replaySource.entries[1].genome.id =
+      duplicate.replaySource.entries[0].genome.id;
+    expect(isRunCheckpoint(duplicate)).toBe(false);
+
+    const champion = cloneCheckpoint(makeReplayCheckpoint().checkpoint);
+    if (!champion.replaySource) throw new Error("Missing replay source.");
+    champion.replaySource.championGenomeId = "not-in-the-roster";
+    expect(isRunCheckpoint(champion)).toBe(false);
+
+    const metadata = cloneCheckpoint(makeReplayCheckpoint().checkpoint);
+    if (!metadata.replaySource) throw new Error("Missing replay source.");
+    metadata.replaySource.entries[0].fitness = Number.POSITIVE_INFINITY;
+    metadata.replaySource.entries[1].survivalRate = Number.NaN;
+    expect(isRunCheckpoint(metadata)).toBe(false);
+
+    const wrongRun = cloneCheckpoint(makeReplayCheckpoint().checkpoint);
+    if (!wrongRun.replaySource) throw new Error("Missing replay source.");
+    wrongRun.replaySource.runId = "other-run";
+    expect(isRunCheckpoint(wrongRun)).toBe(false);
+
+    const future = cloneCheckpoint(makeReplayCheckpoint().checkpoint);
+    if (!future.replaySource) throw new Error("Missing replay source.");
+    future.replaySource.generation = 1;
+    expect(isRunCheckpoint(future)).toBe(false);
+  });
+
+  it("rejects a replay roster from a different world", () => {
+    const { replaySource } = makeReplayCheckpoint();
+    const state = createEvolutionRun({
+      runSeed: 91,
+      config: {
+        ...DEFAULT_EVOLUTION_CONFIG,
+        populationSize: 48,
+        episodesPerGenome: 1,
+      },
+    });
+    expect(() =>
+      createRunCheckpoint({
+        runId: "test-run",
+        world: SHORT_TEST_WORLD,
+        state,
+        metricHistory: [],
+        replaySource: {
+          ...replaySource,
+          world: { ...replaySource.world, width: replaySource.world.width + 1 },
+        },
+      }),
+    ).toThrow("Replay source world must match");
   });
 
   it("accepts a manually selected curriculum level at generation zero", () => {

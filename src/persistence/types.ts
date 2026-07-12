@@ -3,6 +3,7 @@ import type {
   EvolutionRunState,
   GenomeEvaluation,
 } from "@/evolution/types";
+import type { ReplaySource } from "@/replay";
 import type { CurriculumLevel, WorldConfig } from "@/simulation/types";
 
 export const CHECKPOINT_SCHEMA_VERSION = 1 as const;
@@ -43,6 +44,21 @@ export interface SerializedCurriculumChampion {
   evaluation: GenomeEvaluation;
 }
 
+export interface SerializedReplaySourceEntry {
+  genome: SerializedNetworkGenome;
+  fitness: number | null;
+  survivalRate: number | null;
+}
+
+export interface SerializedReplaySource {
+  sourceId: string;
+  runId: string;
+  generation: number;
+  level: CurriculumLevel;
+  championGenomeId: string;
+  entries: SerializedReplaySourceEntry[];
+}
+
 export interface SerializedEvolutionRunState {
   runSeed: number;
   generation: number;
@@ -64,6 +80,7 @@ export interface RunCheckpoint {
   world: WorldConfig;
   evolution: SerializedEvolutionRunState;
   metricHistory: GenerationMetric[];
+  replaySource?: SerializedReplaySource;
 }
 
 export interface RestoredRunCheckpoint {
@@ -74,6 +91,7 @@ export interface RestoredRunCheckpoint {
   world: WorldConfig;
   state: EvolutionRunState;
   metricHistory: GenerationMetric[];
+  replaySource?: ReplaySource;
 }
 
 export interface CreateRunCheckpointOptions {
@@ -82,6 +100,7 @@ export interface CreateRunCheckpointOptions {
   world: Readonly<WorldConfig>;
   state: Readonly<EvolutionRunState>;
   metricHistory: readonly Readonly<GenerationMetric>[];
+  replaySource?: Readonly<ReplaySource>;
 }
 
 export type CheckpointValidationReason =

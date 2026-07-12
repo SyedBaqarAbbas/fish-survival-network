@@ -1,5 +1,12 @@
 "use client";
 
+import { useCallback, useMemo, useState } from "react";
+
+import { ReplayTank } from "@/components/ReplayTank/ReplayTank";
+import {
+  createDemoReplaySource,
+  type ReplayMappingEvent,
+} from "@/replay";
 import { useTrainerWorker } from "@/workers/useTrainerWorker";
 
 import styles from "./EvolutionLab.module.css";
@@ -7,6 +14,16 @@ import styles from "./EvolutionLab.module.css";
 const INPUT_NODES = 11;
 const HIDDEN_NODES = 8;
 const OUTPUT_NODES = 2;
+
+const levelLabels = [
+  "Bias only",
+  "Distance",
+  "Direction",
+  "Closing speed",
+  "Vertical walls",
+  "Full walls",
+  "Full sense",
+] as const;
 
 const statusLabels = {
   error: "Error",
@@ -82,6 +99,17 @@ function NetworkScaffold() {
 
 export function EvolutionLab() {
   const worker = useTrainerWorker();
+  const demoReplaySource = useMemo(() => createDemoReplaySource(42), []);
+  const replaySource = worker.replaySource ?? demoReplaySource;
+  const [aliveCount, setAliveCount] = useState(48);
+  const [replayLevel, setReplayLevel] = useState(replaySource.level);
+  const handleReplayMapping = useCallback(
+    (mapping: Readonly<ReplayMappingEvent>) => setReplayLevel(mapping.level),
+    [],
+  );
+  const generation = worker.generation ?? replaySource.generation;
+  const bestFitness = worker.latestMetric?.bestFitness;
+  const meanFitness = worker.latestMetric?.meanFitness;
 
   return (
     <main className={styles.page}>
@@ -115,27 +143,28 @@ export function EvolutionLab() {
 
       <div className={styles.levelBand}>
         <span>Level</span>
-        <strong>0 / 6</strong>
-        <span>Bias only</span>
+        <strong>{replayLevel} / 6</strong>
+        <span>{levelLabels[replayLevel]}</span>
       </div>
 
       <section aria-labelledby="tank-heading" className={styles.tank}>
         <header className={styles.tankHeader}>
           <h2 id="tank-heading">Replay</h2>
           <span>
-            <strong>0</strong> / 48 fish left
+            <strong>{aliveCount}</strong> / 48 fish left
           </span>
         </header>
-        <div className={styles.tankBody}>
-          <div aria-hidden="true" className={styles.fishMark} />
-          <p>Simulation idle</p>
-        </div>
+        <ReplayTank
+          onAliveCountChange={setAliveCount}
+          onMapping={handleReplayMapping}
+          source={replaySource}
+        />
       </section>
 
       <footer className={styles.metrics}>
-        <span>Generation <strong>—</strong></span>
-        <span>Best <strong>—</strong></span>
-        <span>Mean <strong>—</strong></span>
+        <span>Generation <strong>{generation}</strong></span>
+        <span>Best <strong>{bestFitness?.toFixed(1) ?? "-"}</strong></span>
+        <span>Mean <strong>{meanFitness?.toFixed(1) ?? "-"}</strong></span>
       </footer>
     </main>
   );

@@ -23,7 +23,6 @@
 .header h1,
 .sectionHeader h2,
 .tankHeader h2,
-.tankBody p,
 .eyebrow {
   margin: 0;
 }
@@ -40,8 +39,7 @@
 .workerStatus small,
 .levelBand,
 .tankHeader,
-.metrics,
-.tankBody p {
+.metrics {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 
@@ -174,55 +172,19 @@
   position: absolute;
   top: 0;
   left: 0;
-  z-index: 1;
+  z-index: 2;
   width: 100%;
   padding: 16px 18px;
   color: var(--muted);
   font-size: 11px;
+  pointer-events: none;
+  text-shadow: 0 1px 4px #0f0d12;
   text-transform: uppercase;
 }
 
 .tankHeader strong {
   color: var(--primary);
   font-size: 18px;
-}
-
-.tankBody {
-  display: grid;
-  width: 100%;
-  height: 100%;
-  min-height: 300px;
-  place-content: center;
-  justify-items: center;
-  gap: 16px;
-  background: #0f0d12;
-}
-
-.tankBody p {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.fishMark {
-  position: relative;
-  width: 38px;
-  height: 18px;
-  border-radius: 50% 70% 70% 50%;
-  background: var(--foreground);
-  transform: rotate(-12deg);
-  opacity: 0.7;
-}
-
-.fishMark::after {
-  position: absolute;
-  top: 2px;
-  left: -11px;
-  width: 0;
-  height: 0;
-  border-top: 7px solid transparent;
-  border-right: 14px solid var(--foreground);
-  border-bottom: 7px solid transparent;
-  content: "";
 }
 
 .metrics {
@@ -268,10 +230,6 @@
   }
 
   .tank {
-    min-height: 0;
-  }
-
-  .tankBody {
     min-height: 0;
   }
 

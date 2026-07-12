@@ -5,7 +5,7 @@ import {
   evolveGeneration,
   type EvolutionConfig,
 } from "@/evolution";
-import { restoreRunCheckpoint } from "@/persistence";
+import { genomeFloat32Bytes, restoreRunCheckpoint } from "@/persistence";
 import { WORLD_CONFIG } from "@/simulation/config";
 import type { WorldConfig } from "@/simulation/types";
 
@@ -30,6 +30,13 @@ const CONFIG: Readonly<EvolutionConfig> = Object.freeze({
 const SHORT_WORLD: Readonly<WorldConfig> = Object.freeze({
   ...WORLD_CONFIG,
   episodeSeconds: 0.1,
+});
+const REPLAY_CONFIG: Readonly<EvolutionConfig> = Object.freeze({
+  ...CONFIG,
+  populationSize: 48,
+  eliteCount: 3,
+  tournamentSize: 5,
+  episodesPerGenome: 1,
 });
 
 class ManualScheduler {
@@ -129,6 +136,18 @@ function runOneGeneration(harness: ReturnType<typeof createHarness>) {
   return latestCheckpoint(harness.events);
 }
 
+function initializeReplay(engine: TrainerEngine, runSeed = 42) {
+  engine.handle(
+    command({
+      type: "INITIALIZE",
+      runId: "replay-run",
+      runSeed,
+      evolutionConfig: REPLAY_CONFIG,
+      world: SHORT_WORLD,
+    }),
+  );
+}
+
 describe("TrainerEngine", () => {
   it("enforces command ordering with typed recoverable errors", () => {
     const { engine, events } = createHarness();
@@ -182,6 +201,57 @@ describe("TrainerEngine", () => {
       medianSurvivalRate: expected.medianSurvivalRate,
       curriculumAdvanced: expected.curriculumAdvanced,
     });
+    expect(restored.replaySource).toBeUndefined();
+  });
+
+  it("checkpoints the evaluated top 48 in exact ranked order", () => {
+    const harness = createHarness(8);
+    initializeReplay(harness.engine, 72);
+    const checkpoint = runOneGeneration(harness);
+    const restored = restoreRunCheckpoint(checkpoint);
+    const initial = createEvolutionRun({ runSeed: 72, config: REPLAY_CONFIG });
+    const expected = evolveGeneration(initial, { world: SHORT_WORLD });
+    const expectedRanked = expected.ranked.slice(0, 48);
+
+    expect(restored.state.generation).toBe(1);
+    expect(restored.replaySource).toMatchObject({
+      sourceId: "replay-run:generation:0",
+      runId: "replay-run",
+      generation: 0,
+      level: 0,
+      world: SHORT_WORLD,
+      championGenomeId: expectedRanked[0].genomeId,
+    });
+    expect(
+      restored.replaySource?.entries.map((entry) => entry.genome.id),
+    ).toEqual(expectedRanked.map((item) => item.genomeId));
+    restored.replaySource?.entries.forEach((entry, index) => {
+      const ranked = expectedRanked[index];
+      expect(entry.fitness).toBe(ranked.fitness);
+      expect(entry.survivalRate).toBe(ranked.survivalRate);
+      expect(genomeFloat32Bytes(entry.genome)).toEqual(
+        genomeFloat32Bytes(initial.population[ranked.populationIndex]),
+      );
+    });
+  });
+
+  it("preserves a restored replay roster through manual curriculum checkpoints", () => {
+    const first = createHarness(8);
+    initializeReplay(first.engine, 73);
+    const checkpoint = runOneGeneration(first);
+    const source = restoreRunCheckpoint(checkpoint).replaySource;
+    expect(source).toBeDefined();
+
+    const restored = createHarness(8);
+    restored.engine.handle(
+      command({ type: "INITIALIZE", checkpoint }),
+    );
+    restored.engine.handle(command({ type: "CURRICULUM", level: 3 }));
+
+    const curriculumCheckpoint = latestCheckpoint(restored.events);
+    expect(restoreRunCheckpoint(curriculumCheckpoint).replaySource).toEqual(
+      source,
+    );
   });
 
   it("pauses at a chunk boundary and resumes the retained partial generation", () => {

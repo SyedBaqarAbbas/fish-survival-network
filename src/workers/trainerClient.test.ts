@@ -8,6 +8,7 @@ import {
   type PersistenceWarning,
   type RunCheckpoint,
 } from "@/persistence";
+import type { ReplaySource } from "@/replay";
 import { WORLD_CONFIG } from "@/simulation/config";
 
 import { TrainerClient } from "./trainerClient";
@@ -28,6 +29,38 @@ function makeCheckpoint() {
     world: { ...WORLD_CONFIG, episodeSeconds: 0.1 },
     state: createEvolutionRun({ runSeed: 42, config: TEST_CONFIG }),
     metricHistory: [],
+  });
+}
+
+function makeReplayCheckpoint() {
+  const state = createEvolutionRun({
+    runSeed: 42,
+    config: {
+      ...DEFAULT_EVOLUTION_CONFIG,
+      populationSize: 48,
+      episodesPerGenome: 1,
+    },
+  });
+  const replaySource: ReplaySource = {
+    sourceId: "test-run:generation:0",
+    runId: "test-run",
+    generation: 0,
+    level: 0,
+    world: { ...WORLD_CONFIG, episodeSeconds: 0.1 },
+    championGenomeId: state.population[0].id,
+    entries: state.population.map((genome, index) => ({
+      genome,
+      fitness: 48 - index,
+      survivalRate: index / 48,
+    })),
+  };
+  return createRunCheckpoint({
+    runId: "test-run",
+    savedAt: "2026-07-12T00:00:00.000Z",
+    world: replaySource.world,
+    state,
+    metricHistory: [],
+    replaySource,
   });
 }
 
@@ -212,6 +245,42 @@ describe("trainer client", () => {
 
     expect(repository.saved).toHaveLength(1);
     expect(client.getState()).toMatchObject({ generation: 0, level: 0 });
+    client.dispose();
+  });
+
+  it("exposes decoded replay sources from load and checkpoint events and clears on reset", async () => {
+    const repository = new FakeRepository();
+    repository.checkpoint = makeReplayCheckpoint();
+    const workers: FakeWorker[] = [];
+    const client = createClient(repository, workers);
+
+    await client.initialize();
+    expect(client.getState().replaySource).toMatchObject({
+      sourceId: "test-run:generation:0",
+      championGenomeId: "g0-i0",
+    });
+    expect(client.getState().replaySource?.entries).toHaveLength(48);
+    expect(
+      client.getState().replaySource?.entries[0].genome.inputToHidden,
+    ).toBeInstanceOf(Float32Array);
+
+    const replaySource = client.getState().replaySource;
+    if (!replaySource) {
+      throw new Error("Missing decoded replay source.");
+    }
+    const firstWeight = replaySource.entries[0].genome.inputToHidden[0];
+    replaySource.entries[0].genome.inputToHidden[0] = 4;
+    workers[0].emitMessage({
+      type: "CHECKPOINT",
+      runId: "test-run",
+      checkpoint: makeReplayCheckpoint(),
+    });
+    expect(
+      client.getState().replaySource?.entries[0].genome.inputToHidden[0],
+    ).toBe(firstWeight);
+
+    client.reset({ runId: "replacement", runSeed: 7 });
+    expect(client.getState().replaySource).toBeUndefined();
     client.dispose();
   });
 

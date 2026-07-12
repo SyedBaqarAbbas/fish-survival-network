@@ -2,7 +2,7 @@
 
 A browser-first neuroevolution lab for training fish policies against a scripted predator and replaying deterministic generations with PixiJS.
 
-The repository currently contains the Next.js application foundation, deterministic simulation core, genetic evolution engine, cooperative training worker, and versioned local checkpoint persistence. Visual replay and the full training controls are added by subsequent project issues.
+The repository currently contains the Next.js application foundation, deterministic simulation core, genetic evolution engine, cooperative training worker, versioned local checkpoint persistence, and a live PixiJS replay of the top 48 evaluated fish. Full training and replay controls are added by subsequent project issues.
 
 ## Requirements
 
@@ -44,7 +44,8 @@ src/app/          Next.js route and global styling
 src/components/   React UI and client-only lab boundary
 src/simulation/   Deterministic world contracts
 src/evolution/    Genome and training contracts
-src/rendering/    Packed replay snapshot contracts
+src/replay/       Replay source, protocol, worker engine, and browser client
+src/rendering/    Imperative PixiJS scene, interpolation, and interaction
 src/persistence/  Versioned checkpoint codec and IndexedDB repository
 src/workers/      Typed protocol, cooperative engine, and recovery client
 tests/e2e/        Browser-level verification
@@ -77,3 +78,9 @@ Browser training evaluates four genomes per worker task and yields between chunk
 Checkpoints use schema version 1 and include the complete population, seeded PRNG state, evolution and world configuration, curriculum archives, and generation metric history. Float32 parameters use a canonical little-endian Base64 representation so JSON bundles and IndexedDB records share the same strict Zod validation path.
 
 The browser keeps one active run in IndexedDB. Invalid or unknown records are quarantined, write failures switch to an in-memory session store with a typed warning, and worker crashes recover from the last completed checkpoint in a paused state.
+
+## Deterministic Replay
+
+Each completed generation checkpoints its evaluated top 48 genomes in ranked order. The replay worker runs those policies against the nearest-target scripted predator on the same fixed-step simulation core and queues a newer trained roster until the current episode ends.
+
+The worker emits one packed 832-byte snapshot at 15 Hz. PixiJS interpolates the latest two snapshots on `requestAnimationFrame`, keeping position updates outside React. Fish selection maps a stable canvas index back to its genome, while catch events drive pooled particles, trails, and the low-frequency alive counter.
