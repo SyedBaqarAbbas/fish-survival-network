@@ -1,11 +1,14 @@
 "use client";
 
 import {
+  CircleCheck,
+  LoaderCircle,
   Pause,
   Play,
   RotateCcw,
   Settings2,
   TriangleAlert,
+  X,
 } from "lucide-react";
 import {
   type KeyboardEvent,
@@ -38,6 +41,10 @@ import {
 import { useTrainerWorker } from "@/workers/useTrainerWorker";
 
 import styles from "./EvolutionLab.module.css";
+import {
+  estimateSimulationRemainingMilliseconds,
+  formatSimulationEta,
+} from "./simulationPreparation";
 
 type LabMode = "replay" | "train";
 
@@ -46,7 +53,14 @@ interface SelectedFish {
   genomeId: string;
 }
 
+interface SimulationPreparationRequest {
+  baselineSourceId?: string;
+  generation: number;
+  runId: string;
+}
+
 const ACTIVATION_INTERVAL_MILLISECONDS = 1_000 / 12;
+const PREPARATION_NOTICE_DELAY_MILLISECONDS = 250;
 const REPLAY_SPEEDS = [0.5, 1, 2] as const satisfies readonly ReplaySpeed[];
 
 const levelLabels = [
@@ -226,6 +240,89 @@ function ReplaceRunDialog({
   );
 }
 
+interface SimulationPreparationNoticeProps {
+  completedEpisodes: number;
+  completedGenomes: number;
+  eta: string;
+  generation: number;
+  onDismiss: () => void;
+  onReplay: () => void;
+  paused: boolean;
+  ready: boolean;
+  totalEpisodes: number;
+  totalGenomes: number;
+}
+
+function SimulationPreparationNotice({
+  completedEpisodes,
+  completedGenomes,
+  eta,
+  generation,
+  onDismiss,
+  onReplay,
+  paused,
+  ready,
+  totalEpisodes,
+  totalGenomes,
+}: SimulationPreparationNoticeProps) {
+  return (
+    <aside
+      aria-label="Simulation preparation"
+      className={styles.preparationNotice}
+      data-state={ready ? "ready" : paused ? "paused" : "preparing"}
+    >
+      <header className={styles.preparationHeader}>
+        {ready ? (
+          <CircleCheck aria-hidden="true" className={styles.preparationReadyIcon} size={20} />
+        ) : (
+          <LoaderCircle aria-hidden="true" className={styles.preparationSpinner} size={20} />
+        )}
+        <div>
+          <small>{ready ? "Latest trained generation" : `Generation ${generation}`}</small>
+          <strong aria-atomic="true" aria-live="polite" role="status">
+            {ready ? "Simulation ready" : paused ? "Creation paused" : "Creating simulation"}
+          </strong>
+        </div>
+        <button
+          aria-label="Dismiss simulation status"
+          className={styles.preparationDismiss}
+          onClick={onDismiss}
+          title="Dismiss simulation status"
+          type="button"
+        >
+          <X aria-hidden="true" size={17} />
+        </button>
+      </header>
+
+      {ready ? (
+        <button className={styles.preparationReplay} onClick={onReplay} type="button">
+          <Play aria-hidden="true" size={16} />
+          Replay now
+        </button>
+      ) : (
+        <div className={styles.preparationProgress}>
+          <div>
+            <span>{completedGenomes} / {totalGenomes} genomes</span>
+            <span>
+              {paused ? (
+                "Resume to update ETA"
+              ) : (
+                <>ETA <strong>{eta === "Estimating" ? eta : `About ${eta}`}</strong></>
+              )}
+            </span>
+          </div>
+          <progress
+            aria-label="Simulation creation progress"
+            max={Math.max(1, totalGenomes)}
+            value={completedGenomes}
+          />
+          <small>{completedEpisodes} / {totalEpisodes} episodes</small>
+        </div>
+      )}
+    </aside>
+  );
+}
+
 export interface EvolutionLabProps {
   starterMetricHistory: readonly Readonly<GenerationMetric>[];
   starterReplaySource: ReplaySource;
@@ -263,10 +360,27 @@ export function EvolutionLab({
     useState<LabSettingsValue | undefined>();
   const [pendingReplacement, setPendingReplacement] =
     useState<LabSettingsValue | undefined>();
+  const [simulationPreparation, setSimulationPreparation] =
+    useState<SimulationPreparationRequest | undefined>();
+  const [preparationNoticeVisible, setPreparationNoticeVisible] =
+    useState(false);
+  const cancelPendingReplacement = useCallback(
+    () => setPendingReplacement(undefined),
+    [],
+  );
 
   useEffect(() => {
     requestedReplaySourceRef.current = requestedReplaySource;
   }, [requestedReplaySource]);
+
+  useEffect(() => {
+    if (!simulationPreparation) return;
+    const timer = setTimeout(
+      () => setPreparationNoticeVisible(true),
+      PREPARATION_NOTICE_DELAY_MILLISECONDS,
+    );
+    return () => clearTimeout(timer);
+  }, [simulationPreparation]);
 
   const handleMapping = useCallback(
     (event: Readonly<ReplayMappingEvent>) => {
@@ -278,6 +392,14 @@ export function EvolutionLab({
       const requested = requestedReplaySourceRef.current;
       if (requested.sourceId === event.sourceId) {
         setActiveReplaySource(requested);
+        setSimulationPreparation((current) =>
+          current &&
+          event.runId === current.runId &&
+          event.generation >= current.generation &&
+          event.sourceId !== current.baselineSourceId
+            ? undefined
+            : current,
+        );
       }
 
       const championIndex = event.entries.findIndex(
@@ -411,6 +533,41 @@ export function EvolutionLab({
   const progressValue = worker.progress?.completedGenomes ?? 0;
   const workerConfig: Readonly<EvolutionConfig> =
     worker.evolutionConfig ?? DEFAULT_EVOLUTION_CONFIG;
+  const preparationProgress =
+    simulationPreparation &&
+    worker.progress?.generation === simulationPreparation.generation
+      ? worker.progress
+      : undefined;
+  const preparedReplaySource =
+    simulationPreparation &&
+    worker.replaySource &&
+    worker.replaySource.runId === simulationPreparation.runId &&
+    worker.replaySource.generation >= simulationPreparation.generation &&
+    worker.replaySource.sourceId !== simulationPreparation.baselineSourceId
+      ? worker.replaySource
+      : undefined;
+  const preparationTotalGenomes =
+    preparationProgress?.totalGenomes ?? workerConfig.populationSize;
+  const preparationCompletedGenomes =
+    preparationProgress?.completedGenomes ?? 0;
+  const preparationTotalEpisodes =
+    preparationProgress?.totalEpisodes ??
+    preparationTotalGenomes * workerConfig.episodesPerGenome;
+  const preparationCompletedEpisodes =
+    preparationProgress?.completedEpisodes ?? 0;
+  const previousGenerationDuration = simulationPreparation
+    ? worker.metricHistory.find(
+        (metric) => metric.generation === simulationPreparation.generation - 1,
+      )?.durationMilliseconds
+    : undefined;
+  const preparationEta = formatSimulationEta(
+    estimateSimulationRemainingMilliseconds({
+      completedGenomes: preparationCompletedGenomes,
+      elapsedMilliseconds: preparationProgress?.elapsedMilliseconds ?? 0,
+      previousDurationMilliseconds: previousGenerationDuration,
+      totalGenomes: preparationTotalGenomes,
+    }),
+  );
   const settings = {
     ...(runSettingsOverride ?? {
       ...DEFAULT_LAB_SETTINGS,
@@ -450,7 +607,38 @@ export function EvolutionLab({
     );
   }
 
+  function dismissSimulationPreparation() {
+    setSimulationPreparation(undefined);
+    setPreparationNoticeVisible(false);
+  }
+
+  function handleTrainingCommand() {
+    if (trainerRunning) {
+      worker.pause();
+      return;
+    }
+    if (simulationPreparation && worker.status === "ready") return;
+    if (worker.runId) {
+      setPreparationNoticeVisible(false);
+      setSimulationPreparation({
+        baselineSourceId: worker.replaySource?.sourceId,
+        generation: worker.progress?.generation ?? worker.generation ?? 0,
+        runId: worker.runId,
+      });
+    }
+    worker.start();
+  }
+
+  function replayPreparedSimulation() {
+    if (!preparedReplaySource) return;
+    dismissSimulationPreparation();
+    setMode("replay");
+    setPlaying(true);
+    tankRef.current?.restart();
+  }
+
   function replaceLocalRun(value: LabSettingsValue) {
+    dismissSimulationPreparation();
     setReducedEffects(value.reducedEffects);
     setRunSettingsOverride(value);
     setSettingsOpen(false);
@@ -719,8 +907,11 @@ export function EvolutionLab({
             <div className={styles.trainingCommands}>
               <button
                 className={styles.primaryCommand}
-                disabled={trainerDisabled}
-                onClick={trainerRunning ? worker.pause : worker.start}
+                disabled={
+                  trainerDisabled ||
+                  Boolean(simulationPreparation && worker.status === "ready")
+                }
+                onClick={handleTrainingCommand}
                 type="button"
               >
                 {trainerRunning ? (
@@ -778,6 +969,28 @@ export function EvolutionLab({
         </section>
       </div>
 
+      {simulationPreparation &&
+      (preparationNoticeVisible || preparedReplaySource) &&
+      !settingsOpen &&
+      !pendingReplacement &&
+      worker.status !== "error" &&
+      worker.status !== "unsupported" ? (
+        <SimulationPreparationNotice
+          completedEpisodes={preparationCompletedEpisodes}
+          completedGenomes={preparationCompletedGenomes}
+          eta={preparationEta}
+          generation={
+            preparedReplaySource?.generation ?? simulationPreparation.generation
+          }
+          onDismiss={dismissSimulationPreparation}
+          onReplay={replayPreparedSimulation}
+          paused={worker.status === "paused"}
+          ready={Boolean(preparedReplaySource)}
+          totalEpisodes={preparationTotalEpisodes}
+          totalGenomes={preparationTotalGenomes}
+        />
+      ) : null}
+
       <LabSettings
         onApply={applySettings}
         onClose={() => setSettingsOpen(false)}
@@ -787,7 +1000,7 @@ export function EvolutionLab({
       {pendingReplacement ? (
         <ReplaceRunDialog
           generation={worker.generation ?? 0}
-          onCancel={() => setPendingReplacement(undefined)}
+          onCancel={cancelPendingReplacement}
           onConfirm={() => replaceLocalRun(pendingReplacement)}
         />
       ) : null}

@@ -48,7 +48,7 @@ Chromium is the only verified v1 browser engine. Browser tests cover these relea
 
 The suite checks horizontal overflow, clipped controls, incoherent region overlap, readable neural labels, keyboard tab switching, settings focus behavior, reduced-effects mode, uncaught page errors, and unexpected console errors. Visual baselines should be reviewed whenever an intentional UI change updates the supported-viewport screenshots.
 
-Replay verification also inspects canvas pixels to prove that the rendered frame is nonblank and changes over time. Fish selection must preserve canvas-index-to-genome identity and drive the matching live neural graph.
+Replay verification also inspects canvas pixels to prove that the rendered frame is nonblank and changes over time. Fish selection must preserve canvas-index-to-genome identity and drive the matching live neural graph. The training-to-simulation flow verifies the delayed preparation popup, ETA field, ready transition, mobile viewport bounds, and explicit switch from bundled to local replay.
 
 ## Performance Contracts
 
@@ -79,6 +79,8 @@ The 2026-07-12 release run used macOS 26.5.1 on an Apple M2 Pro MacBook Pro with
 The performance test attaches a compact `release-performance.json` record to its Playwright result so later runs can be compared without changing application code.
 
 The same-environment FIS-13 verification on 2026-07-12 completed the full release gate with 42 Vitest files and 208 tests, 11 Playwright tests, a successful production build, and unchanged starter checksums. The performance measurements above remain the evidence from the original clean-install run.
+
+The FIS-14 verification on 2026-07-13 completed the full release gate with 43 Vitest files and 215 tests, 12 Playwright tests, a successful production build, and unchanged starter checksums.
 
 ## Starter Integrity
 

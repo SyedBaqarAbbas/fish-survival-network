@@ -136,7 +136,10 @@ export const ReplayTank = forwardRef<ReplayTankHandle, ReplayTankProps>(
           setStatus((current) => (current === "error" ? current : "playing"));
         },
         restart() {
-          clientRef.current?.restart();
+          const client = clientRef.current;
+          if (!client) return;
+          loadCurrentSource(client);
+          client.restart();
         },
         select(fishIndex) {
           rendererRef.current?.setSelectedIndex(fishIndex);
@@ -152,7 +155,7 @@ export const ReplayTank = forwardRef<ReplayTankHandle, ReplayTankProps>(
           clientRef.current?.setSpeed(nextSpeed);
         },
       }),
-      [],
+      [loadCurrentSource],
     );
 
     useEffect(() => {

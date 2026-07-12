@@ -484,6 +484,141 @@
   font-size: 9px;
 }
 
+.preparationNotice {
+  width: min(360px, calc(100vw - 36px));
+  position: fixed;
+  right: max(18px, calc((100vw - 960px) / 2));
+  bottom: 18px;
+  z-index: 90;
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--panel);
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.4);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+.preparationNotice[data-state="ready"] {
+  border-color: color-mix(in srgb, var(--success) 48%, var(--border));
+}
+
+.preparationHeader {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.preparationHeader > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.preparationHeader small {
+  color: var(--muted);
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.preparationHeader strong {
+  overflow: hidden;
+  color: var(--foreground);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preparationSpinner {
+  color: var(--primary);
+}
+
+.preparationReadyIcon {
+  color: var(--success);
+}
+
+.preparationDismiss {
+  width: 44px;
+  height: 44px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.preparationDismiss:hover {
+  background: var(--surface);
+  color: var(--foreground);
+}
+
+.preparationProgress {
+  display: grid;
+  gap: 7px;
+}
+
+.preparationProgress > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted-strong);
+  font-size: 10px;
+}
+
+.preparationProgress > div strong {
+  color: var(--foreground);
+  font-weight: 700;
+}
+
+.preparationProgress progress {
+  width: 100%;
+  height: 6px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 3px;
+  appearance: none;
+  background: var(--surface);
+  accent-color: var(--primary);
+}
+
+.preparationProgress progress::-webkit-progress-bar {
+  background: var(--surface);
+}
+
+.preparationProgress progress::-webkit-progress-value {
+  background: var(--primary);
+}
+
+.preparationProgress progress::-moz-progress-bar {
+  background: var(--primary);
+}
+
+.preparationProgress small {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.preparationReplay {
+  min-height: 38px;
+  display: inline-flex;
+  justify-self: end;
+  align-items: center;
+  gap: 7px;
+  padding: 0 13px;
+  border: 1px solid var(--success);
+  border-radius: 6px;
+  background: var(--success);
+  color: #0d1311;
+  font-weight: 750;
+  cursor: pointer;
+}
+
 .historyPanel {
   margin-top: 12px;
 }
@@ -732,16 +867,32 @@
   .confirmDialog {
     padding: 16px;
   }
+
+  .preparationNotice {
+    right: 12px;
+    bottom: 12px;
+    width: calc(100vw - 24px);
+  }
 }
 
 @media (prefers-reduced-motion: no-preference) {
   .page[data-reduced-effects="false"] .workerStatus[data-state="starting"] .statusDot {
     animation: pulse 1.2s ease-in-out infinite;
   }
+
+  .page[data-reduced-effects="false"] .preparationSpinner {
+    animation: spin 1s linear infinite;
+  }
 }
 
 @keyframes pulse {
   50% {
     opacity: 0.35;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
   }
 }

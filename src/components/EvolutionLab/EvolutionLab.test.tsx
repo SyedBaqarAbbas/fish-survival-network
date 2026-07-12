@@ -1,4 +1,11 @@
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -556,6 +563,159 @@ describe("EvolutionLab", () => {
     await user.click(screen.getByRole("tab", { name: "Train" }));
     await user.click(screen.getByRole("button", { name: "Start training" }));
     expect(state.start).toHaveBeenCalledOnce();
+  });
+
+  it("shows delayed simulation progress with a live ETA and paused state", () => {
+    vi.useFakeTimers();
+    try {
+      const initial = workerState({ generation: 0 });
+      useTrainerWorkerMock.mockReturnValue(initial);
+      const view = renderLab(replaySource(751));
+
+      fireEvent.click(screen.getByRole("tab", { name: "Train" }));
+      const startTraining = screen.getByRole("button", { name: "Start training" });
+      fireEvent.click(startTraining);
+      expect(startTraining).toBeDisabled();
+      fireEvent.click(startTraining);
+      expect(initial.start).toHaveBeenCalledOnce();
+      expect(
+        screen.queryByRole("complementary", { name: "Simulation preparation" }),
+      ).not.toBeInTheDocument();
+
+      act(() => vi.advanceTimersByTime(249));
+      expect(
+        screen.queryByRole("complementary", { name: "Simulation preparation" }),
+      ).not.toBeInTheDocument();
+      act(() => vi.advanceTimersByTime(1));
+      let notice = screen.getByRole("complementary", {
+        name: "Simulation preparation",
+      });
+      expect(within(notice).getByRole("status")).toHaveTextContent(
+        "Creating simulation",
+      );
+      expect(within(notice).getByText("Estimating")).toBeInTheDocument();
+
+      const running = workerState({
+        generation: 0,
+        pause: initial.pause,
+        progress: {
+          generation: 0,
+          level: 0,
+          completedGenomes: 16,
+          totalGenomes: 64,
+          completedEpisodes: 64,
+          totalEpisodes: 256,
+          elapsedMilliseconds: 4_000,
+        },
+        start: initial.start,
+        status: "running",
+      });
+      useTrainerWorkerMock.mockReturnValue(running);
+      view.rerender(
+        <EvolutionLab
+          starterMetricHistory={[generationMetric()]}
+          starterReplaySource={replaySource(751)}
+        />,
+      );
+
+      expect(within(notice).getByText("About 12 sec")).toBeInTheDocument();
+      expect(
+        within(notice).getByRole("progressbar", {
+          name: "Simulation creation progress",
+        }),
+      ).toHaveAttribute("value", "16");
+      fireEvent.click(screen.getByRole("button", { name: "Open settings" }));
+      expect(
+        screen.queryByRole("complementary", { name: "Simulation preparation" }),
+      ).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Close settings" }));
+      notice = screen.getByRole("complementary", {
+        name: "Simulation preparation",
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Pause training" }));
+      expect(initial.pause).toHaveBeenCalledOnce();
+
+      useTrainerWorkerMock.mockReturnValue({ ...running, status: "paused" });
+      view.rerender(
+        <EvolutionLab
+          starterMetricHistory={[generationMetric()]}
+          starterReplaySource={replaySource(751)}
+        />,
+      );
+      expect(within(notice).getByRole("status")).toHaveTextContent(
+        "Creation paused",
+      );
+      expect(notice).toHaveTextContent("Resume to update ETA");
+      expect(notice).not.toHaveTextContent("About 12 sec");
+
+      fireEvent.click(
+        within(notice).getByRole("button", {
+          name: "Dismiss simulation status",
+        }),
+      );
+      expect(
+        screen.queryByRole("complementary", { name: "Simulation preparation" }),
+      ).not.toBeInTheDocument();
+      expect(initial.pause).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("offers a completed simulation without restarting until Replay now", () => {
+    vi.useFakeTimers();
+    try {
+      const previous = replaySource(761, 1);
+      previous.runId = "local-active-run";
+      const initial = workerState({ generation: 2, replaySource: previous });
+      useTrainerWorkerMock.mockReturnValue(initial);
+      const starter = replaySource(762);
+      const view = renderLab(starter);
+
+      fireEvent.click(screen.getByRole("tab", { name: "Train" }));
+      fireEvent.click(screen.getByRole("button", { name: "Start training" }));
+      act(() => vi.advanceTimersByTime(250));
+      expect(
+        screen.queryByRole("button", { name: "Replay now" }),
+      ).not.toBeInTheDocument();
+
+      const prepared = replaySource(763, 2);
+      prepared.runId = "local-active-run";
+      useTrainerWorkerMock.mockReturnValue(
+        workerState({
+          generation: 3,
+          replaySource: prepared,
+          start: initial.start,
+          status: "running",
+        }),
+      );
+      view.rerender(
+        <EvolutionLab
+          starterMetricHistory={[generationMetric()]}
+          starterReplaySource={starter}
+        />,
+      );
+
+      const notice = screen.getByRole("complementary", {
+        name: "Simulation preparation",
+      });
+      expect(within(notice).getByRole("status")).toHaveTextContent(
+        "Simulation ready",
+      );
+      expect(replayHarness.restart).not.toHaveBeenCalled();
+
+      fireEvent.click(within(notice).getByRole("button", { name: "Replay now" }));
+      expect(replayHarness.restart).toHaveBeenCalledOnce();
+      expect(screen.getByRole("tab", { name: "Replay" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+      expect(
+        screen.queryByRole("complementary", { name: "Simulation preparation" }),
+      ).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("switches tabs with arrow keys", async () => {

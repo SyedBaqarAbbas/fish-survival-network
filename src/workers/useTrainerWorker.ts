@@ -35,6 +35,15 @@ export interface TrainerWorkerState extends Omit<TrainerClientState, "status"> {
 const DEFAULT_RUN_ID = "local-active-run";
 const DEFAULT_RUN_SEED = 42;
 
+function nextReplacementRunId(currentRunId = DEFAULT_RUN_ID) {
+  const match = /^(.*):revision:(\d+)$/.exec(currentRunId);
+  if (!match) return `${currentRunId}:revision:1`;
+  const revision = Number(match[2]);
+  return Number.isSafeInteger(revision) && revision < Number.MAX_SAFE_INTEGER
+    ? `${match[1]}:revision:${revision + 1}`
+    : `${currentRunId}:revision:1`;
+}
+
 const INITIAL_STATE: TrainerClientState = {
   status: "starting",
   runId: DEFAULT_RUN_ID,
@@ -91,17 +100,9 @@ export function useTrainerWorker(): TrainerWorkerState {
     const client = clientRef.current;
     if (!client) return;
     pendingManualLevelRef.current = options.manualLevel;
-    if (
-      options.runSeed === undefined &&
-      options.evolutionConfig === undefined &&
-      options.manualLevel === undefined
-    ) {
-      client.reset();
-      return;
-    }
     const current = client.getState();
     client.reset({
-      runId: current.runId ?? DEFAULT_RUN_ID,
+      runId: nextReplacementRunId(current.runId),
       runSeed: options.runSeed ?? current.runSeed ?? DEFAULT_RUN_SEED,
       evolutionConfig: options.evolutionConfig ?? current.evolutionConfig,
     });

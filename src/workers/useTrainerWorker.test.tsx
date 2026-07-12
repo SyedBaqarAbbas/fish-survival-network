@@ -38,12 +38,12 @@ class FakeWorker {
   }
 }
 
-function readyEvent(): TrainerEvent {
+function readyEvent(runId = "local-active-run"): TrainerEvent {
   return {
     type: "READY",
     protocolVersion: 1,
     checkpointSchemaVersion: 1,
-    runId: "local-active-run",
+    runId,
     generation: 0,
     level: 0,
     status: "paused",
@@ -92,7 +92,7 @@ describe("useTrainerWorker", () => {
       {
         type: "INITIALIZE",
         protocolVersion: 1,
-        runId: "local-active-run",
+        runId: "local-active-run:revision:1",
         runSeed: 91,
         evolutionConfig,
         world: undefined,
@@ -105,7 +105,9 @@ describe("useTrainerWorker", () => {
       restoredFromCheckpoint: false,
     });
 
-    act(() => resetWorker.emitMessage(readyEvent()));
+    act(() =>
+      resetWorker.emitMessage(readyEvent("local-active-run:revision:1")),
+    );
     await waitFor(() =>
       expect(resetWorker.posted.at(-1)).toEqual({
         type: "CURRICULUM",
@@ -114,7 +116,19 @@ describe("useTrainerWorker", () => {
       }),
     );
 
+    act(() => {
+      result.current.reset({ runSeed: 91, evolutionConfig });
+    });
+    await waitFor(() => expect(FakeWorker.instances).toHaveLength(3));
+    const secondResetWorker = FakeWorker.instances[2];
+    expect(secondResetWorker.posted[0]).toMatchObject({
+      type: "INITIALIZE",
+      runId: "local-active-run:revision:2",
+      runSeed: 91,
+    });
+
     unmount();
     expect(resetWorker.terminated).toBe(true);
+    expect(secondResetWorker.terminated).toBe(true);
   });
 });

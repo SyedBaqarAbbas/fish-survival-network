@@ -40,7 +40,7 @@ The default run evaluates 256 genomes over eight episodes. Browser settings can 
 
 Replay and training use separate versioned message protocols. Every command is validated before execution, and every event is validated by the corresponding client.
 
-The trainer evaluates four genomes per task and yields to the worker event loop between tasks. Pause, reset, curriculum, and checkpoint commands therefore operate at coherent chunk boundaries. The worker only emits resumable checkpoints after a complete generation has been evaluated and reproduced.
+The trainer evaluates four genomes per task and yields to the worker event loop between tasks. Pause, reset, curriculum, and checkpoint commands therefore operate at coherent chunk boundaries. Progress events include completed work and active elapsed time, allowing the UI to estimate the remaining generation time without a second worker protocol. Paused time is excluded, and the ETA remains an approximate wall-clock projection. The worker only emits resumable checkpoints after a complete generation has been evaluated and reproduced.
 
 The replay worker advances the same fixed-step simulation core and publishes snapshots at 15 Hz. It begins a new episode only after all fish are caught or a restart command is received; a pending roster is applied at that boundary. Each snapshot is one 832-byte backing buffer containing fish positions, velocities, alive flags, and predator state. The buffer is transferred, not cloned. Mapping, catch, activation, and episode-end events remain separate semantic messages.
 

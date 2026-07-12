@@ -112,7 +112,7 @@ Regeneration takes roughly 35 seconds on the development machine. The command wr
 
 The app opens in Replay mode with the bundled Level 6 roster. Select a fish in the tank or fish menu to inspect its live neural activations and all 104 weighted edges. Replay controls provide pause, restart, and 0.5x/1x/2x speeds without routing simulation positions through React.
 
-Train mode creates or restores the local IndexedDB run, reports generation progress, and promotes each completed top-48 roster into replay. Settings cover the run seed, population, episode count, mutation controls, automatic or fixed curriculum, and reduced visual effects. Applying replacement settings to an existing run requires confirmation; persistence failures leave training available in memory with a visible warning.
+Train mode creates or restores the local IndexedDB run, reports generation progress, and promotes each completed top-48 roster into replay. Starting or resuming training prepares the current generation as a new simulation in the background. Work that lasts beyond a brief delay shows a non-blocking progress popup with an approximate ETA; the completed roster remains queued until every fish is caught or the user selects Replay now. Settings cover the run seed, population, episode count, mutation controls, automatic or fixed curriculum, and reduced visual effects. Applying replacement settings to an existing run requires confirmation; persistence failures leave training available in memory with a visible warning.
 
 ## Training And Checkpoints
 

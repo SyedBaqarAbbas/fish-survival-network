@@ -1,4 +1,5 @@
-import { render, waitFor } from "@testing-library/react";
+import { act, render, waitFor } from "@testing-library/react";
+import { createRef } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ReplaySource } from "@/replay";
@@ -8,6 +9,7 @@ const fakes = vi.hoisted(() => {
     disposed = false;
     loaded = false;
     loadedSourceIds: string[] = [];
+    operations: string[] = [];
     played = false;
 
     constructor() {
@@ -25,6 +27,7 @@ const fakes = vi.hoisted(() => {
     load(source: ReplaySource) {
       this.loaded = true;
       this.loadedSourceIds.push(source.sourceId);
+      this.operations.push(`load:${source.sourceId}`);
     }
 
     play() {
@@ -32,7 +35,9 @@ const fakes = vi.hoisted(() => {
     }
 
     pause() {}
-    restart() {}
+    restart() {
+      this.operations.push("restart");
+    }
     select() {}
     setSpeed() {}
 
@@ -86,7 +91,7 @@ vi.mock("@/rendering", () => ({
   PixiReplayRenderer: fakes.FakeRenderer,
 }));
 
-import { ReplayTank } from "./ReplayTank";
+import { ReplayTank, type ReplayTankHandle } from "./ReplayTank";
 
 const source = {
   sourceId: "test-source",
@@ -132,5 +137,20 @@ describe("ReplayTank", () => {
     await waitFor(() => expect(view.getByRole("img")).toBeInTheDocument());
     expect(fakes.clients).toHaveLength(1);
     expect(fakes.clients[0].loadedSourceIds).toEqual([restoredSource.sourceId]);
+  });
+
+  it("loads the current source before an imperative restart", async () => {
+    vi.stubGlobal("Worker", class WorkerMock {});
+    const mutableSource = { sourceId: "first-source" } as ReplaySource;
+    const ref = createRef<ReplayTankHandle>();
+    const view = render(<ReplayTank ref={ref} source={mutableSource} />);
+    await waitFor(() => expect(view.getByRole("img")).toBeInTheDocument());
+    const client = fakes.clients[0];
+    client.operations.length = 0;
+
+    mutableSource.sourceId = "prepared-source";
+    act(() => ref.current?.restart());
+
+    expect(client.operations).toEqual(["load:prepared-source", "restart"]);
   });
 });
