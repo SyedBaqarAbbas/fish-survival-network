@@ -256,6 +256,7 @@ export class TrainerClient {
   }
 
   dispose() {
+    if (this.disposed) return;
     this.disposed = true;
     this.workerToken += 1;
     this.worker?.terminate();
@@ -432,6 +433,9 @@ export class TrainerClient {
     if (this.disposed) return;
     if (this.recovering) {
       this.recovering = false;
+      this.workerToken += 1;
+      this.worker?.terminate();
+      this.worker = undefined;
       this.patchState({ status: "error", error: reason });
       return;
     }

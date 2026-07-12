@@ -2,6 +2,7 @@
   "name": "fish-survival-network",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "npm@10.9.3",
   "scripts": {
     "dev": "next dev --webpack",
     "build": "next build --webpack",
@@ -10,15 +11,19 @@
     "lint:fix": "eslint . --fix",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "test:e2e:install": "playwright install chromium",
     "evolve:once": "node --import tsx scripts/run-evolution-generation.ts",
     "simulate": "node --import tsx scripts/run-scripted-episode.ts",
     "train:starter": "node --import tsx scripts/train-starter.ts",
-    "validate:starter": "node --import tsx scripts/validate-starter.ts"
+    "validate:starter": "node --import tsx scripts/validate-starter.ts",
+    "verify:release": "npm run lint && npm run typecheck && npm run test:coverage && npm run test:e2e && npm run build && npm run validate:starter"
   },
   "engines": {
-    "node": ">=20.19"
+    "node": ">=20.19",
+    "npm": ">=10"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",

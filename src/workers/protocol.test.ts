@@ -174,4 +174,25 @@ describe("trainer protocol", () => {
       }),
     ).toBe(false);
   });
+
+  it("rejects progress counts that cannot describe completed genomes", () => {
+    const progress = {
+      type: "PROGRESS",
+      runId: "run-1",
+      generation: 0,
+      level: 0,
+      status: "running",
+      completedGenomes: 4,
+      totalGenomes: 8,
+      completedEpisodes: 8,
+      totalEpisodes: 16,
+      elapsedMilliseconds: 12,
+    } as const;
+
+    expect(
+      isTrainerEvent({ ...progress, completedGenomes: 9, completedEpisodes: 18 }),
+    ).toBe(false);
+    expect(isTrainerEvent({ ...progress, totalEpisodes: 17 })).toBe(false);
+    expect(isTrainerEvent({ ...progress, completedEpisodes: 7 })).toBe(false);
+  });
 });

@@ -222,6 +222,7 @@ export class PixiReplayRenderer {
       const canvas = app.canvas as HTMLCanvasElement;
       canvas.setAttribute("aria-label", "Fish survival replay");
       canvas.setAttribute("role", "img");
+      canvas.dataset.effectsEnabled = String(this.effectsEnabled);
       canvas.dataset.frame = "0";
       canvas.dataset.ready = "true";
       canvas.dataset.selected =
@@ -336,6 +337,7 @@ export class PixiReplayRenderer {
 
   setEffectsEnabled(enabled: boolean) {
     this.effectsEnabled = enabled;
+    if (this.canvas) this.canvas.dataset.effectsEnabled = String(enabled);
     if (!enabled) {
       for (const graphic of this.trailGraphics) graphic.visible = false;
       for (const glow of this.catchGlows) glow.visible = false;

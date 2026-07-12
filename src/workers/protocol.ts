@@ -140,18 +140,39 @@ const readyEventSchema = z.strictObject({
   restored: z.boolean(),
 });
 
-const progressEventSchema = z.strictObject({
-  type: z.literal("PROGRESS"),
-  runId: z.string().min(1),
-  generation: z.number().int().nonnegative(),
-  level: curriculumLevelSchema,
-  status: z.union([z.literal("paused"), z.literal("running")]),
-  completedGenomes: z.number().int().nonnegative(),
-  totalGenomes: z.number().int().positive(),
-  completedEpisodes: z.number().int().nonnegative(),
-  totalEpisodes: z.number().int().positive(),
-  elapsedMilliseconds: z.number().finite().nonnegative(),
-});
+const progressEventSchema = z
+  .strictObject({
+    type: z.literal("PROGRESS"),
+    runId: z.string().min(1),
+    generation: z.number().int().nonnegative(),
+    level: curriculumLevelSchema,
+    status: z.union([z.literal("paused"), z.literal("running")]),
+    completedGenomes: z.number().int().nonnegative(),
+    totalGenomes: z.number().int().positive(),
+    completedEpisodes: z.number().int().nonnegative(),
+    totalEpisodes: z.number().int().positive(),
+    elapsedMilliseconds: z.number().finite().nonnegative(),
+  })
+  .superRefine((event, context) => {
+    if (event.completedGenomes > event.totalGenomes) {
+      context.addIssue({
+        code: "custom",
+        path: ["completedGenomes"],
+        message: "Completed genomes cannot exceed total genomes.",
+      });
+    }
+    if (
+      event.totalEpisodes % event.totalGenomes !== 0 ||
+      event.completedEpisodes !==
+        event.completedGenomes * (event.totalEpisodes / event.totalGenomes)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["completedEpisodes"],
+        message: "Episode progress must match completed genome progress.",
+      });
+    }
+  });
 
 export const TRAINER_ERROR_CODES = [
   "INVALID_COMMAND",

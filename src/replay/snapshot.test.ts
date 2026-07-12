@@ -10,6 +10,10 @@ import {
 } from "./snapshot";
 
 describe("packed replay snapshots", () => {
+  it("stays below the 5 KB replay payload budget", () => {
+    expect(REPLAY_SNAPSHOT_BYTE_LENGTH).toBeLessThan(5 * 1024);
+  });
+
   it("packs the canonical 48-fish layout into one 832-byte buffer", () => {
     const state = createSimulationState(
       createSpawnLayout({ seed: 42, fishCount: 48 }),

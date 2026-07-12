@@ -1,12 +1,6 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 test("renders the lab and starts the training worker", async ({ page }) => {
-  const errors: string[] = [];
-  page.on("console", (message) => {
-    if (message.type() === "error") errors.push(message.text());
-  });
-  page.on("pageerror", (error) => errors.push(error.message));
-
   await page.goto("/");
 
   await expect(
@@ -22,5 +16,4 @@ test("renders the lab and starts the training worker", async ({ page }) => {
     }),
   ).toBeVisible();
   await expect(page.getByTestId("neural-graph").locator("line")).toHaveCount(104);
-  expect(errors).toEqual([]);
 });

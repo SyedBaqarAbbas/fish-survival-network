@@ -247,6 +247,7 @@ describe("PixiReplayRenderer", () => {
     const canvas = host.querySelector("canvas");
     expect(canvas).toBe(renderer.canvas);
     expect(canvas).toHaveAttribute("data-ready", "true");
+    expect(canvas).toHaveAttribute("data-effects-enabled", "true");
     expect(canvas).toHaveAttribute("data-sequence", "1");
     expect(canvas).toHaveAttribute("data-frame", "1");
     expect(pixi.applications[0].renderer.resize).toHaveBeenCalledWith(800, 560, 1);
@@ -254,6 +255,11 @@ describe("PixiReplayRenderer", () => {
     expect(onFrame).toHaveBeenCalledWith(
       expect.objectContaining({ frame: 1, sequence: 1 }),
     );
+
+    renderer.setEffectsEnabled(false);
+    expect(canvas).toHaveAttribute("data-effects-enabled", "false");
+    renderer.setEffectsEnabled(true);
+    expect(canvas).toHaveAttribute("data-effects-enabled", "true");
 
     renderer.destroy();
     expect(host.querySelector("canvas")).toBeNull();

@@ -100,6 +100,7 @@ class FakeRepository implements CheckpointRepository {
   warning?: PersistenceWarning;
   saved: RunCheckpoint[] = [];
   clearCount = 0;
+  closeCount = 0;
 
   async loadActive(): Promise<CheckpointRepositoryResult> {
     return {
@@ -132,7 +133,9 @@ class FakeRepository implements CheckpointRepository {
     };
   }
 
-  async close() {}
+  async close() {
+    this.closeCount += 1;
+  }
 }
 
 class FakeWorker {
@@ -154,12 +157,16 @@ class FakeWorker {
     this.terminated = true;
   }
 
-  emitMessage(event: TrainerEvent) {
+  emitMessage(event: unknown) {
     this.emit("message", { data: event } as never);
   }
 
   emitError(message: string) {
     this.emit("error", { message } as never);
+  }
+
+  emitMessageError() {
+    this.emit("messageerror", {} as never);
   }
 
   private emit(type: string, event: never) {
@@ -396,6 +403,44 @@ describe("trainer client", () => {
     });
     expect(client.getState().generation).toBe(0);
     client.dispose();
+  });
+
+  it("terminates and invalidates a replacement worker when recovery fails again", async () => {
+    const repository = new FakeRepository();
+    const workers: FakeWorker[] = [];
+    const client = createClient(repository, workers);
+    await client.initialize();
+    workers[0].emitMessage(readyEvent(false));
+
+    workers[0].emitError("first crash");
+    expect(workers).toHaveLength(2);
+    expect(workers[1].terminated).toBe(false);
+
+    workers[1].emitMessageError();
+    expect(workers[1].terminated).toBe(true);
+    expect(client.getState()).toMatchObject({
+      status: "error",
+      error: "The training worker sent an unreadable response.",
+    });
+
+    workers[1].emitMessage(readyEvent(true));
+    expect(client.getState().status).toBe("error");
+    client.dispose();
+  });
+
+  it("terminates the active worker and closes persistence exactly once", async () => {
+    const repository = new FakeRepository();
+    const workers: FakeWorker[] = [];
+    const client = createClient(repository, workers);
+    await client.initialize();
+    workers[0].emitMessage(readyEvent(false));
+
+    client.dispose();
+    client.dispose();
+    await Promise.resolve();
+
+    expect(workers[0].terminated).toBe(true);
+    expect(repository.closeCount).toBe(1);
   });
 
   it("clears persistence and replaces the worker for a coherent reset", async () => {

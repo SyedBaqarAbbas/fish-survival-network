@@ -115,5 +115,6 @@ describe("useTrainerWorker", () => {
     );
 
     unmount();
+    expect(resetWorker.terminated).toBe(true);
   });
 });
