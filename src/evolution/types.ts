@@ -30,6 +30,7 @@ export interface EvolutionConfig {
   episodesPerGenome: number;
   minimumWeight: number;
   maximumWeight: number;
+  automaticCurriculum?: boolean;
 }
 
 export interface FishEpisodeFitnessStats {

@@ -192,16 +192,26 @@ export function completeEvaluatedGeneration(
     level: currentState.curriculum.level,
     nextGeneration: currentState.generation + 1,
   });
-  const curriculum = updateCurriculum({
-    state: currentState.curriculum,
-    medianSurvivalRate: median,
-    generation: currentState.generation,
-    champion,
-    championEvaluation: ranked[0],
-    population: reproduction.population,
-    random,
-    config: currentState.config,
-  });
+  const curriculum =
+    currentState.config.automaticCurriculum === false
+      ? {
+          state: {
+            ...currentState.curriculum,
+            stableGenerations: 0,
+          },
+          population: reproduction.population,
+          advanced: false,
+        }
+      : updateCurriculum({
+          state: currentState.curriculum,
+          medianSurvivalRate: median,
+          generation: currentState.generation,
+          champion,
+          championEvaluation: ranked[0],
+          population: reproduction.population,
+          random,
+          config: currentState.config,
+        });
   const state: EvolutionRunState = {
     runSeed: currentState.runSeed,
     generation: currentState.generation + 1,

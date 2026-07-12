@@ -85,6 +85,12 @@ The pinned validation result is 7 survivors across 8 held-out episodes with `13.
 
 Regeneration takes roughly 35 seconds on the development machine. The command writes canonical formatted JSON and its checksum sidecar only after the complete checkpoint passes structural and held-out validation.
 
+## Lab Interface
+
+The app opens in Replay mode with the bundled Level 6 roster. Select a fish in the tank or from the fish menu to inspect its live 11 → 8 → 2 activations and weighted edges. Replay controls provide pause, restart, and 0.5x/1x/2x speeds without routing simulation frames through React.
+
+Train mode creates or restores the local IndexedDB run, reports generation progress, and promotes each completed top-48 roster into the replay. Settings cover the run seed, population, episode count, mutation controls, automatic or fixed curriculum, and reduced visual effects. Applying replacement settings to an existing run requires confirmation; persistence failures leave training available in memory with a visible warning.
+
 ## Training And Checkpoints
 
 Browser training evaluates four genomes per worker task and yields between chunks so pause, reset, curriculum, and checkpoint commands remain responsive. Progress is emitted after every chunk. Only the finalized post-reproduction state is resumable; partial evaluation arrays never enter a checkpoint.

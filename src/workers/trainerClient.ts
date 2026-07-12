@@ -1,8 +1,9 @@
-import type { EvolutionConfig } from "@/evolution";
+import { DEFAULT_EVOLUTION_CONFIG, type EvolutionConfig } from "@/evolution";
 import {
   restoreCheckpointReplaySource,
   type CheckpointRepository,
   type GenerationMetric,
+  type PersistenceBackendName,
   type PersistenceWarning,
   type RunCheckpoint,
 } from "@/persistence";
@@ -37,14 +38,19 @@ export interface TrainerProgress {
 export interface TrainerClientState {
   status: TrainerClientStatus;
   runId?: string;
+  runSeed?: number;
+  evolutionConfig?: Readonly<EvolutionConfig>;
   generation?: number;
   level?: CurriculumLevel;
   progress?: TrainerProgress;
-  latestMetric?: GenerationMetric;
+  latestMetric?: Readonly<GenerationMetric>;
+  metricHistory: readonly Readonly<GenerationMetric>[];
   replaySource?: ReplaySource;
+  persistenceBackend?: PersistenceBackendName;
   warning?: PersistenceWarning;
   error?: string;
   recovered: boolean;
+  restoredFromCheckpoint: boolean;
 }
 
 export interface FreshRunOptions {
@@ -65,12 +71,26 @@ function messageFrom(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
+function ownEvolutionConfig(
+  config: Readonly<EvolutionConfig> = DEFAULT_EVOLUTION_CONFIG,
+) {
+  return Object.freeze({ ...config }) satisfies Readonly<EvolutionConfig>;
+}
+
+function ownMetricHistory(
+  history: readonly Readonly<GenerationMetric>[],
+): readonly Readonly<GenerationMetric>[] {
+  return Object.freeze(
+    history.map((metric) => Object.freeze({ ...metric })),
+  );
+}
+
 export class TrainerClient {
   private readonly persistence: CheckpointRepository;
   private readonly workerFactory: () => Worker;
   private readonly listeners = new Set<StateListener>();
   private freshRun: FreshRunOptions;
-  private state: TrainerClientState = { status: "starting", recovered: false };
+  private state: TrainerClientState;
   private worker?: Worker;
   private workerToken = 0;
   private initialized = false;
@@ -85,7 +105,22 @@ export class TrainerClient {
   }: TrainerClientOptions) {
     this.persistence = persistence;
     this.workerFactory = workerFactory;
-    this.freshRun = freshRun;
+    const evolutionConfig = ownEvolutionConfig(freshRun.evolutionConfig);
+    this.freshRun = {
+      runId: freshRun.runId,
+      runSeed: freshRun.runSeed,
+      ...(freshRun.evolutionConfig ? { evolutionConfig } : {}),
+      ...(freshRun.world ? { world: { ...freshRun.world } } : {}),
+    };
+    this.state = {
+      status: "starting",
+      runId: freshRun.runId,
+      runSeed: freshRun.runSeed,
+      evolutionConfig,
+      metricHistory: ownMetricHistory([]),
+      recovered: false,
+      restoredFromCheckpoint: false,
+    };
   }
 
   getState() {
@@ -108,21 +143,32 @@ export class TrainerClient {
       this.lastCheckpoint = loaded.checkpoint;
       if (loaded.checkpoint) {
         const replaySource = restoreCheckpointReplaySource(loaded.checkpoint);
+        const evolutionConfig = ownEvolutionConfig(
+          loaded.checkpoint.evolution.config,
+        );
+        const metricHistory = ownMetricHistory(loaded.checkpoint.metricHistory);
         this.freshRun = {
           runId: loaded.checkpoint.runId,
           runSeed: loaded.checkpoint.evolution.runSeed,
-          evolutionConfig: loaded.checkpoint.evolution.config,
-          world: loaded.checkpoint.world,
+          evolutionConfig,
+          world: { ...loaded.checkpoint.world },
         };
         this.patchState({
           runId: loaded.checkpoint.runId,
+          runSeed: loaded.checkpoint.evolution.runSeed,
+          evolutionConfig,
           generation: loaded.checkpoint.evolution.generation,
           level: loaded.checkpoint.evolution.curriculum.level,
-          latestMetric: loaded.checkpoint.metricHistory.at(-1),
+          latestMetric: metricHistory.at(-1),
+          metricHistory,
           replaySource,
+          restoredFromCheckpoint: true,
         });
       }
-      if (loaded.warning) this.patchState({ warning: loaded.warning });
+      this.patchState({
+        persistenceBackend: loaded.backend,
+        ...(loaded.warning ? { warning: loaded.warning } : {}),
+      });
       this.createAndInitializeWorker(loaded.checkpoint, false);
     } catch (error) {
       if (this.disposed || initializationToken !== this.workerToken) return;
@@ -131,6 +177,7 @@ export class TrainerClient {
           code: "INDEXED_DB_UNAVAILABLE",
           message: messageFrom(error),
         },
+        persistenceBackend: "memory",
       });
       this.createAndInitializeWorker(undefined, false);
     }
@@ -153,17 +200,28 @@ export class TrainerClient {
       });
       return;
     }
-    const nextRun = {
+    const requestedEvolutionConfig =
+      options.evolutionConfig ?? this.freshRun.evolutionConfig;
+    const evolutionConfig = ownEvolutionConfig(requestedEvolutionConfig);
+    const nextRun: FreshRunOptions = {
       ...this.freshRun,
       ...options,
-      evolutionConfig:
-        options.evolutionConfig ?? this.freshRun.evolutionConfig,
-      world: options.world ?? this.freshRun.world,
+      evolutionConfig: requestedEvolutionConfig
+        ? evolutionConfig
+        : undefined,
+      world: options.world
+        ? { ...options.world }
+        : this.freshRun.world
+          ? { ...this.freshRun.world }
+          : undefined,
     };
     this.freshRun = nextRun;
     this.lastCheckpoint = undefined;
     void this.persistence.clearActive().then((result) => {
-      if (result.warning) this.patchState({ warning: result.warning });
+      this.patchState({
+        persistenceBackend: result.backend,
+        ...(result.warning ? { warning: result.warning } : {}),
+      });
     });
     this.workerToken += 1;
     this.worker?.terminate();
@@ -171,10 +229,15 @@ export class TrainerClient {
     this.state = {
       status: "starting",
       runId: nextRun.runId,
+      runSeed: nextRun.runSeed,
+      evolutionConfig,
       generation: 0,
       level: 0,
+      metricHistory: ownMetricHistory([]),
+      persistenceBackend: this.state.persistenceBackend,
       warning: this.state.warning,
       recovered: false,
+      restoredFromCheckpoint: false,
     };
     for (const listener of this.listeners) listener(this.state);
     this.createAndInitializeWorker(undefined, false);
@@ -263,11 +326,14 @@ export class TrainerClient {
         this.patchState({
           status: recovered ? "paused" : "ready",
           runId: value.runId,
+          runSeed: this.freshRun.runSeed,
+          evolutionConfig: ownEvolutionConfig(this.freshRun.evolutionConfig),
           generation: value.generation,
           level: value.level,
           progress: undefined,
           error: undefined,
           recovered,
+          restoredFromCheckpoint: value.restored,
         });
         break;
       }
@@ -289,9 +355,17 @@ export class TrainerClient {
           },
         });
         break;
-      case "GENERATION":
-        this.patchState({ latestMetric: value.metric, error: undefined });
+      case "GENERATION": {
+        const metric = Object.freeze({ ...value.metric });
+        const metricHistory = ownMetricHistory([
+          ...this.state.metricHistory.filter(
+            (existing) => existing.generation !== metric.generation,
+          ),
+          metric,
+        ]);
+        this.patchState({ latestMetric: metric, metricHistory, error: undefined });
         break;
+      }
       case "LEVEL":
         this.patchState({
           generation: value.generation,
@@ -316,16 +390,33 @@ export class TrainerClient {
     event: Extract<TrainerEvent, { type: "CHECKPOINT" }>,
   ) {
     const replaySource = restoreCheckpointReplaySource(event.checkpoint);
+    const evolutionConfig = ownEvolutionConfig(
+      event.checkpoint.evolution.config,
+    );
+    const metricHistory = ownMetricHistory(event.checkpoint.metricHistory);
     this.lastCheckpoint = event.checkpoint;
+    this.freshRun = {
+      runId: event.checkpoint.runId,
+      runSeed: event.checkpoint.evolution.runSeed,
+      evolutionConfig,
+      world: { ...event.checkpoint.world },
+    };
     this.patchState({
       runId: event.runId,
+      runSeed: event.checkpoint.evolution.runSeed,
+      evolutionConfig,
       generation: event.checkpoint.evolution.generation,
       level: event.checkpoint.evolution.curriculum.level,
+      latestMetric: metricHistory.at(-1),
+      metricHistory,
       replaySource,
       error: undefined,
     });
     void this.persistence.saveActive(event.checkpoint).then((result) => {
-      if (result.warning) this.patchState({ warning: result.warning });
+      this.patchState({
+        persistenceBackend: result.backend,
+        ...(result.warning ? { warning: result.warning } : {}),
+      });
     });
   }
 

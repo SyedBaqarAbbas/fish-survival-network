@@ -118,6 +118,28 @@ describe("run checkpoint codec", () => {
     expect(Object.isFrozen(again.state.config)).toBe(true);
   });
 
+  it("round-trips an explicit manual curriculum mode without changing legacy config", () => {
+    const state = createEvolutionRun({
+      runSeed: 100,
+      config: { ...TEST_EVOLUTION_CONFIG, automaticCurriculum: false },
+    });
+    const checkpoint = createRunCheckpoint({
+      runId: "manual-curriculum",
+      savedAt: "2026-07-12T01:02:03.000Z",
+      world: SHORT_TEST_WORLD,
+      state,
+      metricHistory: [],
+    });
+
+    expect(checkpoint.evolution.config.automaticCurriculum).toBe(false);
+    expect(
+      restoreRunCheckpoint(checkpoint).state.config.automaticCurriculum,
+    ).toBe(false);
+    expect(makeCheckpoint().evolution.config).not.toHaveProperty(
+      "automaticCurriculum",
+    );
+  });
+
   it("round-trips an ordered replay roster with byte-exact owned genomes", () => {
     const { checkpoint, replaySource } = makeReplayCheckpoint();
     expect(checkpoint.replaySource?.entries).toHaveLength(48);

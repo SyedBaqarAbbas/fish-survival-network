@@ -57,6 +57,27 @@ describe("evolution runs", () => {
     expect(evolveFive(1235)).not.toEqual(first);
   });
 
+  it("keeps curriculum fixed when automatic advancement is disabled", () => {
+    const config = makeEvolutionConfig({
+      ...CONFIG,
+      automaticCurriculum: false,
+    });
+    let state = createEvolutionRun({ runSeed: 1234, config });
+
+    for (let generation = 0; generation < 5; generation += 1) {
+      const result = evolveGeneration(state, { world: SHORT_WORLD });
+      expect(result.curriculumAdvanced).toBe(false);
+      state = result.state;
+    }
+
+    expect(state.generation).toBe(5);
+    expect(state.curriculum).toEqual({
+      level: 0,
+      stableGenerations: 0,
+      champions: {},
+    });
+  });
+
   it("keeps future input columns at exact zero until their level", () => {
     const run = createEvolutionRun({ runSeed: 72, config: CONFIG });
     run.population.forEach((genome) => {

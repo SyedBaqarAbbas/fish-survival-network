@@ -2,7 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import {
+  DEFAULT_EVOLUTION_CONFIG,
+  type EvolutionConfig,
+} from "@/evolution";
 import { createCheckpointRepository } from "@/persistence";
+import type { CurriculumLevel } from "@/simulation";
 
 import {
   TrainerClient,
@@ -12,11 +17,17 @@ import {
 
 export type TrainerWorkerStatus = TrainerClientStatus | "unsupported";
 
+export interface TrainerWorkerResetOptions {
+  runSeed?: number;
+  evolutionConfig?: Readonly<EvolutionConfig>;
+  manualLevel?: CurriculumLevel;
+}
+
 export interface TrainerWorkerState extends Omit<TrainerClientState, "status"> {
   status: TrainerWorkerStatus;
   start: () => void;
   pause: () => void;
-  reset: () => void;
+  reset: (options?: TrainerWorkerResetOptions) => void;
   setCurriculum: TrainerClient["setCurriculum"];
   requestCheckpoint: () => void;
 }
@@ -26,11 +37,17 @@ const DEFAULT_RUN_SEED = 42;
 
 const INITIAL_STATE: TrainerClientState = {
   status: "starting",
+  runId: DEFAULT_RUN_ID,
+  runSeed: DEFAULT_RUN_SEED,
+  evolutionConfig: Object.freeze({ ...DEFAULT_EVOLUTION_CONFIG }),
+  metricHistory: Object.freeze([]),
   recovered: false,
+  restoredFromCheckpoint: false,
 };
 
 export function useTrainerWorker(): TrainerWorkerState {
   const clientRef = useRef<TrainerClient>(null);
+  const pendingManualLevelRef = useRef<CurriculumLevel | undefined>(undefined);
   const [state, setState] = useState<TrainerClientState>(INITIAL_STATE);
   const [unsupported, setUnsupported] = useState(false);
 
@@ -53,6 +70,11 @@ export function useTrainerWorker(): TrainerWorkerState {
     clientRef.current = client;
     const unsubscribe = client.subscribe((nextState) => {
       setState({ ...nextState });
+      const manualLevel = pendingManualLevelRef.current;
+      if (nextState.status === "ready" && manualLevel !== undefined) {
+        pendingManualLevelRef.current = undefined;
+        client.setCurriculum(manualLevel);
+      }
     });
     void client.initialize();
 
@@ -65,7 +87,25 @@ export function useTrainerWorker(): TrainerWorkerState {
 
   const start = useCallback(() => clientRef.current?.start(), []);
   const pause = useCallback(() => clientRef.current?.pause(), []);
-  const reset = useCallback(() => clientRef.current?.reset(), []);
+  const reset = useCallback((options: TrainerWorkerResetOptions = {}) => {
+    const client = clientRef.current;
+    if (!client) return;
+    pendingManualLevelRef.current = options.manualLevel;
+    if (
+      options.runSeed === undefined &&
+      options.evolutionConfig === undefined &&
+      options.manualLevel === undefined
+    ) {
+      client.reset();
+      return;
+    }
+    const current = client.getState();
+    client.reset({
+      runId: current.runId ?? DEFAULT_RUN_ID,
+      runSeed: options.runSeed ?? current.runSeed ?? DEFAULT_RUN_SEED,
+      evolutionConfig: options.evolutionConfig ?? current.evolutionConfig,
+    });
+  }, []);
   const setCurriculum = useCallback(
     (level: Parameters<TrainerClient["setCurriculum"]>[0]) =>
       clientRef.current?.setCurriculum(level),

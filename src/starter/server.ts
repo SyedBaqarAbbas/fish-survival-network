@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import rawStarterCheckpoint from "./artifacts/level-6-starter.v1.json";
 
+import type { GenerationMetric } from "@/persistence";
 import { cloneReplaySource, type ReplaySource } from "@/replay";
 
 import { STARTER_EXPECTED_ARTIFACT_SHA256 } from "./config";
@@ -17,10 +18,17 @@ if (starterArtifactSha256 !== STARTER_EXPECTED_ARTIFACT_SHA256) {
     `Bundled starter checksum mismatch: expected ${STARTER_EXPECTED_ARTIFACT_SHA256}, received ${starterArtifactSha256}.`,
   );
 }
-const canonicalStarterReplaySource = validateStarterCheckpoint(
+const validatedStarterCheckpoint = validateStarterCheckpoint(
   rawStarterCheckpoint,
-).replaySource;
+);
+const canonicalStarterReplaySource = validatedStarterCheckpoint.replaySource;
+const canonicalStarterMetricHistory =
+  validatedStarterCheckpoint.restored.metricHistory;
 
 export function getStarterReplaySource(): ReplaySource {
   return cloneReplaySource(canonicalStarterReplaySource);
+}
+
+export function getStarterMetricHistory(): GenerationMetric[] {
+  return canonicalStarterMetricHistory.map((metric) => ({ ...metric }));
 }

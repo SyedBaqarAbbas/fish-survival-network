@@ -1,25 +1,62 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import {
+  Pause,
+  Play,
+  RotateCcw,
+  Settings2,
+  TriangleAlert,
+} from "lucide-react";
+import {
+  type KeyboardEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
-import { ReplayTank } from "@/components/ReplayTank/ReplayTank";
-import type { ReplayMappingEvent, ReplaySource } from "@/replay";
+import { GenerationChart } from "@/components/GenerationChart/GenerationChart";
+import {
+  LabSettings,
+  type LabSettingsValue,
+} from "@/components/LabSettings/LabSettings";
+import { NeuralGraph } from "@/components/NeuralGraph/NeuralGraph";
+import {
+  ReplayTank,
+  type ReplayTankHandle,
+} from "@/components/ReplayTank/ReplayTank";
+import { DEFAULT_EVOLUTION_CONFIG, type EvolutionConfig } from "@/evolution";
+import type { GenerationMetric } from "@/persistence";
+import {
+  REPLAY_FISH_COUNT,
+  type ReplayActivationEvent,
+  type ReplayMappingEvent,
+  type ReplaySource,
+  type ReplaySpeed,
+} from "@/replay";
 import { useTrainerWorker } from "@/workers/useTrainerWorker";
 
 import styles from "./EvolutionLab.module.css";
 
-const INPUT_NODES = 11;
-const HIDDEN_NODES = 8;
-const OUTPUT_NODES = 2;
+type LabMode = "replay" | "train";
+
+interface SelectedFish {
+  fishIndex: number;
+  genomeId: string;
+}
+
+const ACTIVATION_INTERVAL_MILLISECONDS = 1_000 / 12;
+const REPLAY_SPEEDS = [0.5, 1, 2] as const satisfies readonly ReplaySpeed[];
 
 const levelLabels = [
-  "Bias only",
-  "Distance",
-  "Direction",
-  "Closing speed",
-  "Vertical walls",
-  "Full walls",
-  "Full sense",
+  "bias only",
+  "distance",
+  "direction",
+  "closing speed",
+  "vertical walls",
+  "full walls",
+  "full sense",
 ] as const;
 
 const statusLabels = {
@@ -31,141 +68,733 @@ const statusLabels = {
   unsupported: "Unavailable",
 } as const;
 
-function distributeNodes(count: number, height: number) {
-  return Array.from({ length: count }, (_, index) =>
-    count === 1 ? height / 2 : 28 + (index * (height - 56)) / (count - 1),
-  );
+const DEFAULT_LAB_SETTINGS: LabSettingsValue = {
+  runSeed: 42,
+  populationSize: 256,
+  episodesPerGenome: 8,
+  mutationProbability: DEFAULT_EVOLUTION_CONFIG.mutationProbability,
+  mutationStandardDeviation:
+    DEFAULT_EVOLUTION_CONFIG.mutationStandardDeviation,
+  automaticCurriculum: true,
+  manualLevel: 0,
+  reducedEffects: false,
+};
+
+function supportedPopulation(value: number): 64 | 128 | 256 {
+  return value === 64 || value === 128 || value === 256 ? value : 256;
 }
 
-function NetworkScaffold() {
-  const height = 220;
-  const inputY = distributeNodes(INPUT_NODES, height);
-  const hiddenY = distributeNodes(HIDDEN_NODES, height);
-  const outputY = distributeNodes(OUTPUT_NODES, height);
+function supportedEpisodes(value: number): 4 | 8 {
+  return value === 4 || value === 8 ? value : 8;
+}
+
+function formatMetric(value: number | null | undefined, suffix = "") {
+  return value === null || value === undefined
+    ? "-"
+    : `${value.toFixed(1)}${suffix}`;
+}
+
+function useThrottledActivation() {
+  const [activation, setActivation] =
+    useState<ReplayActivationEvent | undefined>(undefined);
+  const pendingRef = useRef<ReplayActivationEvent | undefined>(undefined);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const lastPublishedAtRef = useRef(0);
+
+  const publish = useCallback((event: Readonly<ReplayActivationEvent>) => {
+    pendingRef.current = event;
+    if (timerRef.current !== undefined) return;
+
+    const elapsed = performance.now() - lastPublishedAtRef.current;
+    const delay = Math.max(0, ACTIVATION_INTERVAL_MILLISECONDS - elapsed);
+    timerRef.current = setTimeout(() => {
+      timerRef.current = undefined;
+      const pending = pendingRef.current;
+      pendingRef.current = undefined;
+      if (!pending) return;
+      lastPublishedAtRef.current = performance.now();
+      setActivation(pending);
+    }, delay);
+  }, []);
+
+  const clear = useCallback(() => {
+    if (timerRef.current !== undefined) clearTimeout(timerRef.current);
+    timerRef.current = undefined;
+    pendingRef.current = undefined;
+    lastPublishedAtRef.current = 0;
+    setActivation(undefined);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (timerRef.current !== undefined) clearTimeout(timerRef.current);
+    },
+    [],
+  );
+
+  return { activation, clear, publish };
+}
+
+interface ReplaceRunDialogProps {
+  generation: number;
+  onCancel: () => void;
+  onConfirm: () => void;
+}
+
+function ReplaceRunDialog({
+  generation,
+  onCancel,
+  onConfirm,
+}: ReplaceRunDialogProps) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const previousFocus = document.activeElement;
+    cancelRef.current?.focus();
+    function handleKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCancel();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const buttons = dialogRef.current?.querySelectorAll<HTMLButtonElement>(
+        "button:not([disabled])",
+      );
+      if (!buttons?.length) return;
+      const first = buttons[0];
+      const last = buttons[buttons.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      if (previousFocus instanceof HTMLElement && previousFocus.isConnected) {
+        previousFocus.focus();
+      }
+    };
+  }, [onCancel]);
 
   return (
-    <svg
-      aria-label="Eleven input, eight hidden, and two output neuron topology"
-      className={styles.network}
-      role="img"
-      viewBox={`0 0 720 ${height}`}
+    <div
+      className={styles.dialogBackdrop}
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onCancel();
+      }}
     >
-      <g className={styles.edges}>
-        {inputY.flatMap((sourceY, inputIndex) =>
-          hiddenY.map((targetY, hiddenIndex) => (
-            <line
-              key={`ih-${inputIndex}-${hiddenIndex}`}
-              x1="92"
-              x2="360"
-              y1={sourceY}
-              y2={targetY}
-            />
-          )),
-        )}
-        {hiddenY.flatMap((sourceY, hiddenIndex) =>
-          outputY.map((targetY, outputIndex) => (
-            <line
-              key={`ho-${hiddenIndex}-${outputIndex}`}
-              x1="360"
-              x2="628"
-              y1={sourceY}
-              y2={targetY}
-            />
-          )),
-        )}
-      </g>
-      <g className={styles.nodes}>
-        {inputY.map((y, index) => (
-          <circle cx="92" cy={y} key={`input-${index}`} r="5" />
-        ))}
-        {hiddenY.map((y, index) => (
-          <circle cx="360" cy={y} key={`hidden-${index}`} r="5" />
-        ))}
-        {outputY.map((y, index) => (
-          <circle cx="628" cy={y} key={`output-${index}`} r="7" />
-        ))}
-      </g>
-      <g className={styles.networkLabels}>
-        <text x="16" y="18">inputs</text>
-        <text x="330" y="18">hidden</text>
-        <text x="645" y="18">steering</text>
-      </g>
-    </svg>
+      <div
+        aria-describedby="replace-run-detail"
+        aria-labelledby="replace-run-title"
+        aria-modal="true"
+        className={styles.confirmDialog}
+        ref={dialogRef}
+        role="alertdialog"
+      >
+        <TriangleAlert aria-hidden="true" className={styles.dialogIcon} size={22} />
+        <div>
+          <h2 id="replace-run-title">Replace local run?</h2>
+          <p id="replace-run-detail">
+            Generation {generation} and its saved checkpoint will be cleared.
+          </p>
+        </div>
+        <div className={styles.dialogActions}>
+          <button
+            className={styles.secondaryButton}
+            onClick={onCancel}
+            ref={cancelRef}
+            type="button"
+          >
+            Keep run
+          </button>
+          <button
+            className={styles.dangerButton}
+            onClick={onConfirm}
+            type="button"
+          >
+            Replace run
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
 export interface EvolutionLabProps {
+  starterMetricHistory: readonly Readonly<GenerationMetric>[];
   starterReplaySource: ReplaySource;
 }
 
-export function EvolutionLab({ starterReplaySource }: EvolutionLabProps) {
+export function EvolutionLab({
+  starterMetricHistory,
+  starterReplaySource,
+}: EvolutionLabProps) {
   const worker = useTrainerWorker();
-  const replaySource = worker.replaySource ?? starterReplaySource;
-  const [aliveCount, setAliveCount] = useState(48);
-  const [replayLevel, setReplayLevel] = useState(replaySource.level);
-  const handleReplayMapping = useCallback(
-    (mapping: Readonly<ReplayMappingEvent>) => setReplayLevel(mapping.level),
-    [],
+  const tankRef = useRef<ReplayTankHandle>(null);
+  const requestedReplaySource = worker.replaySource ?? starterReplaySource;
+  const requestedReplaySourceRef = useRef(requestedReplaySource);
+  const mappingRef = useRef<ReplayMappingEvent | undefined>(undefined);
+  const selectionRef = useRef<SelectedFish | undefined>(undefined);
+  const lastRequestedSourceIdRef = useRef(requestedReplaySource.sourceId);
+  const { activation, clear: clearActivation, publish: publishActivation } =
+    useThrottledActivation();
+
+  const [mode, setMode] = useState<LabMode>("replay");
+  const [playing, setPlaying] = useState(true);
+  const [speed, setSpeed] = useState<ReplaySpeed>(1);
+  const [aliveCount, setAliveCount] = useState<number>(REPLAY_FISH_COUNT);
+  const [activeReplaySource, setActiveReplaySource] =
+    useState(starterReplaySource);
+  const [mapping, setMapping] = useState<ReplayMappingEvent | undefined>();
+  const [selection, setSelection] = useState<SelectedFish | undefined>();
+  const [replayError, setReplayError] = useState<string | undefined>();
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [reducedEffects, setReducedEffects] = useState(false);
+  const [runSettingsOverride, setRunSettingsOverride] =
+    useState<LabSettingsValue | undefined>();
+  const [pendingReplacement, setPendingReplacement] =
+    useState<LabSettingsValue | undefined>();
+
+  useEffect(() => {
+    requestedReplaySourceRef.current = requestedReplaySource;
+  }, [requestedReplaySource]);
+
+  useEffect(() => {
+    if (lastRequestedSourceIdRef.current === requestedReplaySource.sourceId) {
+      return;
+    }
+    lastRequestedSourceIdRef.current = requestedReplaySource.sourceId;
+    queueMicrotask(() => tankRef.current?.restart());
+  }, [requestedReplaySource.sourceId]);
+
+  const handleMapping = useCallback(
+    (event: Readonly<ReplayMappingEvent>) => {
+      const ownedEvent: ReplayMappingEvent = {
+        ...event,
+        world: { ...event.world },
+        entries: event.entries.map((entry) => ({ ...entry })),
+      };
+      const requested = requestedReplaySourceRef.current;
+      if (requested.sourceId === event.sourceId) {
+        setActiveReplaySource(requested);
+      }
+
+      const championIndex = event.entries.findIndex(
+        (entry) => entry.genomeId === event.championGenomeId,
+      );
+      const previousMapping = mappingRef.current;
+      const previousSelection = selectionRef.current;
+      const preservedIndex = previousSelection
+        && previousMapping?.sourceId === event.sourceId
+        ? event.entries.findIndex(
+            (entry) => entry.genomeId === previousSelection.genomeId,
+          )
+        : -1;
+      const fishIndex =
+        preservedIndex >= 0 ? preservedIndex : championIndex >= 0 ? championIndex : 0;
+      const selected = {
+        fishIndex,
+        genomeId: event.entries[fishIndex].genomeId,
+      };
+      mappingRef.current = ownedEvent;
+      selectionRef.current = selected;
+      setMapping(ownedEvent);
+      setSelection(selected);
+      setAliveCount(REPLAY_FISH_COUNT);
+      setReplayError(undefined);
+      clearActivation();
+      tankRef.current?.select(fishIndex);
+    },
+    [clearActivation],
   );
-  const generation = replaySource.generation;
-  const bestFitness = worker.latestMetric?.bestFitness;
-  const meanFitness = worker.latestMetric?.meanFitness;
+
+  const handleSelectionChange = useCallback(
+    (fishIndex: number, genomeId: string) => {
+      const currentMapping = mappingRef.current;
+      if (currentMapping?.entries[fishIndex]?.genomeId !== genomeId) return;
+      const selected = { fishIndex, genomeId };
+      selectionRef.current = selected;
+      setSelection(selected);
+      clearActivation();
+    },
+    [clearActivation],
+  );
+
+  const handleActivation = useCallback(
+    (event: Readonly<ReplayActivationEvent>) => {
+      const currentMapping = mappingRef.current;
+      const selected = selectionRef.current;
+      if (
+        !currentMapping ||
+        !selected ||
+        event.episodeId !== currentMapping.episodeId ||
+        event.fishIndex !== selected.fishIndex ||
+        event.genomeId !== selected.genomeId ||
+        currentMapping.entries[event.fishIndex]?.genomeId !== event.genomeId
+      ) {
+        return;
+      }
+      publishActivation(event);
+    },
+    [publishActivation],
+  );
+
+  const selectFish = useCallback(
+    (fishIndex: number) => {
+      const currentMapping = mappingRef.current;
+      const entry = currentMapping?.entries[fishIndex];
+      if (!entry) return;
+      const selected = { fishIndex, genomeId: entry.genomeId };
+      selectionRef.current = selected;
+      setSelection(selected);
+      clearActivation();
+      tankRef.current?.select(fishIndex);
+    },
+    [clearActivation],
+  );
+
+  const selectedGenome = useMemo(() => {
+    const selectedId = selection?.genomeId;
+    return (
+      activeReplaySource.entries.find(
+        (entry) => entry.genome.id === selectedId,
+      )?.genome ?? activeReplaySource.entries[0].genome
+    );
+  }, [activeReplaySource, selection?.genomeId]);
+
+  const activeGeneration = mapping?.generation ?? activeReplaySource.generation;
+  const activeLevel = mapping?.level ?? activeReplaySource.level;
+  const bundledSource =
+    activeReplaySource.sourceId === starterReplaySource.sourceId;
+  const activeHistory = bundledSource
+    ? starterMetricHistory
+    : worker.metricHistory;
+  const activeMetric = activeHistory.find(
+    (metric) => metric.generation === activeGeneration,
+  );
+  const mappedEntries = mapping?.entries;
+  const bestFitness =
+    activeMetric?.bestFitness ??
+    mappedEntries?.reduce<number | undefined>(
+      (best, entry) =>
+        entry.fitness === null
+          ? best
+          : best === undefined
+            ? entry.fitness
+            : Math.max(best, entry.fitness),
+      undefined,
+    );
+  const championEntry = mappedEntries?.find(
+    (entry) => entry.genomeId === mapping?.championGenomeId,
+  );
+  const survivalRate =
+    activeMetric?.championSurvivalRate ?? championEntry?.survivalRate;
+  const chartMetrics =
+    mode === "train"
+      ? worker.metricHistory
+      : activeHistory.filter((metric) => metric.generation <= activeGeneration);
+  const sourceLabel = bundledSource ? "Bundled" : "Local";
+  const hasExistingLocalRun =
+    Boolean(worker.replaySource) ||
+    worker.restoredFromCheckpoint ||
+    (worker.generation ?? 0) > 0 ||
+    worker.status === "running" ||
+    (worker.progress?.completedGenomes ?? 0) > 0;
+  const trainerDisabled =
+    worker.status === "starting" ||
+    worker.status === "unsupported" ||
+    worker.status === "error";
+  const trainerRunning = worker.status === "running";
+  const progressMaximum =
+    worker.progress?.totalGenomes ?? worker.evolutionConfig?.populationSize ?? 1;
+  const progressValue = worker.progress?.completedGenomes ?? 0;
+  const workerConfig: Readonly<EvolutionConfig> =
+    worker.evolutionConfig ?? DEFAULT_EVOLUTION_CONFIG;
+  const settings = {
+    ...(runSettingsOverride ?? {
+      ...DEFAULT_LAB_SETTINGS,
+      runSeed: worker.runSeed ?? DEFAULT_LAB_SETTINGS.runSeed,
+      populationSize: supportedPopulation(workerConfig.populationSize),
+      episodesPerGenome: supportedEpisodes(workerConfig.episodesPerGenome),
+      mutationProbability: workerConfig.mutationProbability,
+      mutationStandardDeviation: workerConfig.mutationStandardDeviation,
+      automaticCurriculum: workerConfig.automaticCurriculum ?? true,
+      manualLevel: worker.level ?? DEFAULT_LAB_SETTINGS.manualLevel,
+    }),
+    reducedEffects,
+  } satisfies LabSettingsValue;
+
+  function settingsConfig(value: Readonly<LabSettingsValue>): EvolutionConfig {
+    return {
+      ...(worker.evolutionConfig ?? DEFAULT_EVOLUTION_CONFIG),
+      populationSize: value.populationSize,
+      episodesPerGenome: value.episodesPerGenome,
+      mutationProbability: value.mutationProbability,
+      mutationStandardDeviation: value.mutationStandardDeviation,
+      automaticCurriculum: value.automaticCurriculum,
+    };
+  }
+
+  function runSettingsChanged(value: Readonly<LabSettingsValue>) {
+    const config: Readonly<EvolutionConfig> =
+      worker.evolutionConfig ?? DEFAULT_EVOLUTION_CONFIG;
+    return (
+      value.runSeed !== (worker.runSeed ?? DEFAULT_LAB_SETTINGS.runSeed) ||
+      value.populationSize !== config.populationSize ||
+      value.episodesPerGenome !== config.episodesPerGenome ||
+      value.mutationProbability !== config.mutationProbability ||
+      value.mutationStandardDeviation !== config.mutationStandardDeviation ||
+      value.automaticCurriculum !== (config.automaticCurriculum ?? true) ||
+      (!value.automaticCurriculum && value.manualLevel !== (worker.level ?? 0))
+    );
+  }
+
+  function replaceLocalRun(value: LabSettingsValue) {
+    setReducedEffects(value.reducedEffects);
+    setRunSettingsOverride(value);
+    setSettingsOpen(false);
+    setPendingReplacement(undefined);
+    worker.pause();
+    worker.reset({
+      runSeed: value.runSeed,
+      evolutionConfig: settingsConfig(value),
+      manualLevel: value.automaticCurriculum ? undefined : value.manualLevel,
+    });
+    setMode("train");
+  }
+
+  function applySettings(value: LabSettingsValue) {
+    setSettingsOpen(false);
+    if (!runSettingsChanged(value)) {
+      setReducedEffects(value.reducedEffects);
+      return;
+    }
+    if (hasExistingLocalRun) {
+      setReducedEffects(value.reducedEffects);
+      setPendingReplacement(value);
+      return;
+    }
+    replaceLocalRun(value);
+  }
+
+  function requestReset() {
+    if (hasExistingLocalRun) {
+      setPendingReplacement(settings);
+    } else {
+      replaceLocalRun(settings);
+    }
+  }
+
+  function switchModeFromKeyboard(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const nextMode: LabMode = mode === "replay" ? "train" : "replay";
+    setMode(nextMode);
+    document.getElementById(`${nextMode}-tab`)?.focus();
+  }
 
   return (
-    <main className={styles.page}>
+    <main
+      className={styles.page}
+      data-reduced-effects={String(settings.reducedEffects)}
+      data-testid="evolution-lab"
+    >
       <header className={styles.header}>
-        <div>
-          <p className={styles.eyebrow}>Neuroevolution lab</p>
+        <div className={styles.brand}>
+          <p className={styles.eyebrow}>reelgorithm / neuroevolution lab</p>
           <h1>Fish Survival Network</h1>
         </div>
-        <div
-          aria-live="polite"
-          className={styles.workerStatus}
-          data-state={worker.status}
-          data-testid="worker-status"
-          title={worker.error}
-        >
-          <span aria-hidden="true" className={styles.statusDot} />
-          <span>
-            <small>Training worker</small>
-            <strong>{statusLabels[worker.status]}</strong>
-          </span>
+        <div className={styles.headerTools}>
+          <div
+            aria-live="polite"
+            className={styles.workerStatus}
+            data-state={worker.status}
+            data-testid="worker-status"
+          >
+            <span aria-hidden="true" className={styles.statusDot} />
+            <span>
+              <small>Trainer</small>
+              <strong>{statusLabels[worker.status]}</strong>
+            </span>
+          </div>
+          <button
+            aria-label="Open settings"
+            className={styles.iconButton}
+            disabled={worker.status === "starting"}
+            onClick={() => setSettingsOpen(true)}
+            title="Settings"
+            type="button"
+          >
+            <Settings2 aria-hidden="true" size={19} strokeWidth={1.8} />
+          </button>
         </div>
       </header>
 
-      <section aria-labelledby="network-heading" className={styles.networkPanel}>
-        <header className={styles.sectionHeader}>
-          <h2 id="network-heading">Neural policy</h2>
-          <span>11 → 8 → 2</span>
-        </header>
-        <NetworkScaffold />
-      </section>
+      {worker.warning ? (
+        <div className={styles.warning} role="alert">
+          <TriangleAlert aria-hidden="true" size={17} />
+          <span>
+            <strong>Persistence warning</strong>
+            {worker.warning.message}
+            {worker.persistenceBackend === "memory"
+              ? " Training remains available for this session."
+              : ""}
+          </span>
+        </div>
+      ) : null}
+      {worker.error && worker.status === "error" ? (
+        <div className={styles.warning} role="alert">
+          <TriangleAlert aria-hidden="true" size={17} />
+          <span><strong>Training unavailable</strong>{worker.error}</span>
+        </div>
+      ) : null}
+      {replayError ? (
+        <div className={styles.warning} role="alert">
+          <TriangleAlert aria-hidden="true" size={17} />
+          <span><strong>Replay warning</strong>{replayError}</span>
+        </div>
+      ) : null}
 
-      <div className={styles.levelBand}>
-        <span>Level</span>
-        <strong>{replayLevel} / 6</strong>
-        <span>{levelLabels[replayLevel]}</span>
+      <div
+        aria-label="Lab mode"
+        className={styles.tabs}
+        onKeyDown={switchModeFromKeyboard}
+        role="tablist"
+      >
+        {(["replay", "train"] as const).map((tab) => (
+          <button
+            aria-controls="lab-panel"
+            aria-selected={mode === tab}
+            className={styles.tab}
+            id={`${tab}-tab`}
+            key={tab}
+            onClick={() => setMode(tab)}
+            role="tab"
+            tabIndex={mode === tab ? 0 : -1}
+            type="button"
+          >
+            {tab === "replay" ? "Replay" : "Train"}
+          </button>
+        ))}
       </div>
 
-      <section aria-labelledby="tank-heading" className={styles.tank}>
-        <header className={styles.tankHeader}>
-          <h2 id="tank-heading">Replay</h2>
-          <span>
-            <strong>{aliveCount}</strong> / 48 fish left
-          </span>
-        </header>
-        <ReplayTank
-          onAliveCountChange={setAliveCount}
-          onMapping={handleReplayMapping}
-          source={replaySource}
-        />
-      </section>
+      <div aria-labelledby={`${mode}-tab`} id="lab-panel" role="tabpanel">
+        <section aria-labelledby="network-heading" className={styles.networkPanel}>
+          <header className={styles.sectionHeader}>
+            <div>
+              <p className={styles.sectionEyebrow}>Selected policy</p>
+              <h2 id="network-heading">Neural graph</h2>
+            </div>
+            <label className={styles.fishPicker}>
+              <span>Inspect fish</span>
+              <select
+                disabled={!mapping}
+                onChange={(event) => selectFish(Number(event.currentTarget.value))}
+                title={selection?.genomeId}
+                value={selection?.fishIndex ?? 0}
+              >
+                {(mapping?.entries ?? []).map((entry) => (
+                  <option key={entry.genomeId} value={entry.fishIndex}>
+                    Fish {String(entry.fishIndex + 1).padStart(2, "0")}
+                    {entry.genomeId === mapping?.championGenomeId ? " / champion" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </header>
+          <div className={styles.selectionStatus} aria-live="polite">
+            <span title={selection?.genomeId}>{selection?.genomeId ?? "Mapping fish"}</span>
+            <span>{activation ? (activation.alive ? "alive" : "caught") : "tracking"}</span>
+            <span>fitness {formatMetric(activation?.fitness)}</span>
+            <span>
+              survival {formatMetric(
+                activation?.survivalRate === null || activation?.survivalRate === undefined
+                  ? undefined
+                  : activation.survivalRate * 100,
+                "%",
+              )}
+            </span>
+          </div>
+          <NeuralGraph
+            activation={activation}
+            genome={selectedGenome}
+            level={activeLevel}
+            reducedEffects={settings.reducedEffects}
+          />
+        </section>
 
-      <footer className={styles.metrics}>
-        <span>Generation <strong>{generation}</strong></span>
-        <span>Best <strong>{bestFitness?.toFixed(1) ?? "-"}</strong></span>
-        <span>Mean <strong>{meanFitness?.toFixed(1) ?? "-"}</strong></span>
-      </footer>
+        <div className={styles.levelBand}>
+          <span>Level</span>
+          <strong>{activeLevel} / 6</strong>
+          <span>{levelLabels[activeLevel]}</span>
+        </div>
+
+        <section aria-labelledby="tank-heading" className={styles.tank}>
+          <header className={styles.tankHeader}>
+            <div>
+              <h2 id="tank-heading">{sourceLabel} replay</h2>
+              <span title={activeReplaySource.sourceId}>generation {activeGeneration}</span>
+            </div>
+            <span><strong>{aliveCount}</strong> / {REPLAY_FISH_COUNT} fish left</span>
+          </header>
+          <ReplayTank
+            effectsEnabled={!settings.reducedEffects}
+            onActivation={handleActivation}
+            onAliveCountChange={setAliveCount}
+            onError={(error) => setReplayError(error.message)}
+            onMapping={handleMapping}
+            onSelectionChange={handleSelectionChange}
+            playing={playing}
+            ref={tankRef}
+            source={requestedReplaySource}
+            speed={speed}
+          />
+        </section>
+
+        <section aria-label="Replay metrics" className={styles.metrics}>
+          <div className={styles.sourceMetric}>
+            <span>Source</span>
+            <strong title={activeReplaySource.sourceId}>{sourceLabel}</strong>
+          </div>
+          <div><span>Generation</span><strong>{activeGeneration}</strong></div>
+          <div><span>Alive</span><strong>{aliveCount} / {REPLAY_FISH_COUNT}</strong></div>
+          <div><span>Best</span><strong>{formatMetric(bestFitness)}</strong></div>
+          <div><span>Mean</span><strong>{formatMetric(activeMetric?.meanFitness)}</strong></div>
+          <div>
+            <span>Survival</span>
+            <strong>{formatMetric(
+              survivalRate === null || survivalRate === undefined
+                ? undefined
+                : survivalRate * 100,
+              "%",
+            )}</strong>
+          </div>
+          <div><span>Level</span><strong>{activeLevel} / 6</strong></div>
+        </section>
+
+        {mode === "replay" ? (
+          <section aria-label="Replay controls" className={styles.controlBar}>
+            <div className={styles.controlGroup}>
+              <button
+                aria-label={playing ? "Pause replay" : "Play replay"}
+                className={styles.iconButton}
+                onClick={() => setPlaying((current) => !current)}
+                title={playing ? "Pause replay" : "Play replay"}
+                type="button"
+              >
+                {playing ? (
+                  <Pause aria-hidden="true" size={19} />
+                ) : (
+                  <Play aria-hidden="true" size={19} />
+                )}
+              </button>
+              <button
+                aria-label="Restart replay"
+                className={styles.iconButton}
+                onClick={() => tankRef.current?.restart()}
+                title="Restart replay"
+                type="button"
+              >
+                <RotateCcw aria-hidden="true" size={18} />
+              </button>
+            </div>
+            <div aria-label="Replay speed" className={styles.speedControl} role="group">
+              {REPLAY_SPEEDS.map((value) => (
+                <button
+                  aria-pressed={speed === value}
+                  key={value}
+                  onClick={() => setSpeed(value)}
+                  type="button"
+                >
+                  {value}x
+                </button>
+              ))}
+            </div>
+            <span className={styles.controlStatus}>{playing ? "Playing" : "Paused"}</span>
+          </section>
+        ) : (
+          <section aria-label="Training controls" className={styles.trainingBar}>
+            <div className={styles.trainingCommands}>
+              <button
+                className={styles.primaryCommand}
+                disabled={trainerDisabled}
+                onClick={trainerRunning ? worker.pause : worker.start}
+                type="button"
+              >
+                {trainerRunning ? (
+                  <Pause aria-hidden="true" size={18} />
+                ) : (
+                  <Play aria-hidden="true" size={18} />
+                )}
+                {trainerRunning
+                  ? "Pause training"
+                  : worker.restoredFromCheckpoint
+                    ? "Resume training"
+                    : "Start training"}
+              </button>
+              <button
+                aria-label="Reset training run"
+                className={styles.iconButton}
+                disabled={trainerDisabled}
+                onClick={requestReset}
+                title="Reset training run"
+                type="button"
+              >
+                <RotateCcw aria-hidden="true" size={18} />
+              </button>
+            </div>
+            <div className={styles.trainingProgress}>
+              <div>
+                <span>Generation {worker.generation ?? 0}</span>
+                <span>
+                  {progressValue} / {progressMaximum} genomes
+                </span>
+              </div>
+              <progress
+                aria-label="Training generation progress"
+                max={Math.max(1, progressMaximum)}
+                value={progressValue}
+              />
+              <small>
+                {worker.progress
+                  ? `${worker.progress.completedEpisodes} / ${worker.progress.totalEpisodes} episodes`
+                  : `${statusLabels[worker.status]} / level ${worker.level ?? 0}`}
+              </small>
+            </div>
+          </section>
+        )}
+
+        <section aria-labelledby="history-heading" className={styles.historyPanel}>
+          <header className={styles.sectionHeader}>
+            <div>
+              <p className={styles.sectionEyebrow}>{mode === "train" ? "Local run" : sourceLabel}</p>
+              <h2 id="history-heading">Generation history</h2>
+            </div>
+            <span className={styles.historyCount}>{chartMetrics.length} generations</span>
+          </header>
+          <GenerationChart metrics={chartMetrics} />
+        </section>
+      </div>
+
+      <LabSettings
+        onApply={applySettings}
+        onClose={() => setSettingsOpen(false)}
+        open={settingsOpen}
+        value={settings}
+      />
+      {pendingReplacement ? (
+        <ReplaceRunDialog
+          generation={worker.generation ?? 0}
+          onCancel={() => setPendingReplacement(undefined)}
+          onConfirm={() => replaceLocalRun(pendingReplacement)}
+        />
+      ) : null}
     </main>
   );
 }

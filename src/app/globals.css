@@ -5,6 +5,7 @@
   --primary: #ff2794;
   --foreground: #f4f1f6;
   --muted: #8b8690;
+  --muted-strong: #aaa4ae;
   --border: rgba(255, 255, 255, 0.22);
   --border-subtle: rgba(255, 255, 255, 0.1);
   --success: #54d6a0;
@@ -34,6 +35,13 @@ button,
 input,
 select {
   font: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 ::selection {

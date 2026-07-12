@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { getStarterReplaySource } from "./server";
+import { getStarterMetricHistory, getStarterReplaySource } from "./server";
 
 describe("starter replay server boundary", () => {
   it("returns a valid owned clone without exposing the canonical source", () => {
@@ -42,5 +42,16 @@ describe("starter replay server boundary", () => {
     expect(nextSource.entries[0].genome.inputToHidden).not.toBe(
       source.entries.at(-1)?.genome.inputToHidden,
     );
+  });
+
+  it("returns owned generation history without exposing the checkpoint", () => {
+    const history = getStarterMetricHistory();
+
+    expect(history).toHaveLength(38);
+    expect(history[0]).toMatchObject({ generation: 0, level: 0 });
+    expect(history.at(-1)).toMatchObject({ generation: 37, level: 6 });
+    history[0].bestFitness = -1;
+
+    expect(getStarterMetricHistory()[0].bestFitness).not.toBe(-1);
   });
 });

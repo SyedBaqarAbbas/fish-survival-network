@@ -376,6 +376,14 @@ test("renders and selects fish through the replay worker", async ({ page }) => {
       }, target.fishIndex),
     )
     .toBe(target.genomeId);
+  await expect(page.getByTestId("neural-graph")).toHaveAttribute(
+    "data-genome-id",
+    target.genomeId,
+  );
+  await expect(page.getByTestId("neural-graph")).toHaveAttribute(
+    "data-has-activation",
+    "true",
+  );
 
   const lifecycleBeforeReload = await page.evaluate(() => {
     const replayWorkers = (window as unknown as ReplayHarnessWindow)

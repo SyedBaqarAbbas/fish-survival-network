@@ -43,6 +43,10 @@ describe("trainer protocol", () => {
         protocolVersion: TRAINER_PROTOCOL_VERSION,
         runId: "run-2",
         runSeed: 7,
+        evolutionConfig: {
+          ...makeCheckpoint().evolution.config,
+          automaticCurriculum: false,
+        },
       },
       {
         type: "CURRICULUM",
@@ -65,6 +69,15 @@ describe("trainer protocol", () => {
     ).toBe(false);
     expect(
       isTrainerCommand({ ...freshInitialize, unexpected: true }),
+    ).toBe(false);
+    expect(
+      isTrainerCommand({
+        ...freshInitialize,
+        evolutionConfig: {
+          ...makeCheckpoint().evolution.config,
+          automaticCurriculum: "false",
+        },
+      }),
     ).toBe(false);
     expect(
       isTrainerCommand({

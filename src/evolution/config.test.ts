@@ -15,6 +15,22 @@ describe("evolution configuration", () => {
       minimumWeight: -5,
       maximumWeight: 5,
     });
+    expect("automaticCurriculum" in DEFAULT_EVOLUTION_CONFIG).toBe(false);
+  });
+
+  it("accepts an optional automatic curriculum flag and rejects non-booleans", () => {
+    expect(
+      validateEvolutionConfig({
+        ...DEFAULT_EVOLUTION_CONFIG,
+        automaticCurriculum: false,
+      }).automaticCurriculum,
+    ).toBe(false);
+    expect(() =>
+      validateEvolutionConfig({
+        ...DEFAULT_EVOLUTION_CONFIG,
+        automaticCurriculum: "false" as never,
+      }),
+    ).toThrow(TypeError);
   });
 
   it("rejects invalid counts, probabilities, and bounds", () => {

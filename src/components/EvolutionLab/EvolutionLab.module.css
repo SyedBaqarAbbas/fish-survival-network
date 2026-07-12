@@ -1,15 +1,24 @@
 .page {
-  width: min(100% - 32px, 880px);
+  width: min(calc(100% - 48px), 960px);
   margin: 0 auto;
-  padding: 28px 0 44px;
+  padding: 24px 0 52px;
 }
 
 .header,
+.headerTools,
+.workerStatus,
+.tabs,
 .sectionHeader,
-.tankHeader,
+.selectionStatus,
 .levelBand,
-.metrics,
-.workerStatus {
+.tankHeader,
+.controlBar,
+.controlGroup,
+.speedControl,
+.trainingBar,
+.trainingCommands,
+.trainingProgress > div,
+.dialogActions {
   display: flex;
   align-items: center;
 }
@@ -17,44 +26,62 @@
 .header {
   justify-content: space-between;
   gap: 24px;
-  margin-bottom: 24px;
+  margin-bottom: 18px;
 }
 
-.header h1,
+.brand h1,
+.eyebrow,
 .sectionHeader h2,
+.sectionEyebrow,
 .tankHeader h2,
-.eyebrow {
+.selectionStatus,
+.confirmDialog h2,
+.confirmDialog p {
   margin: 0;
 }
 
-.header h1 {
-  font-size: 26px;
-  line-height: 1.15;
-  font-weight: 720;
+.brand h1 {
+  font-size: 27px;
+  font-weight: 740;
+  line-height: 1.1;
 }
 
 .eyebrow,
-.sectionHeader span,
-.networkLabels,
+.sectionEyebrow,
 .workerStatus small,
+.selectionStatus,
+.fishPicker,
 .levelBand,
 .tankHeader,
-.metrics {
+.metrics,
+.controlStatus,
+.speedControl,
+.trainingProgress,
+.historyCount,
+.warning {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 
-.eyebrow {
-  margin-bottom: 7px;
+.eyebrow,
+.sectionEyebrow {
   color: var(--primary);
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
 }
 
+.eyebrow {
+  margin-bottom: 6px;
+}
+
+.headerTools {
+  gap: 8px;
+}
+
 .workerStatus {
-  min-width: 148px;
-  gap: 10px;
-  padding: 9px 12px;
+  min-width: 126px;
+  gap: 9px;
+  padding: 8px 11px;
   border: 1px solid var(--border-subtle);
   border-radius: 6px;
   background: var(--panel);
@@ -62,21 +89,22 @@
 
 .workerStatus > span:last-child {
   display: grid;
-  gap: 2px;
+  gap: 1px;
 }
 
 .workerStatus small {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 9px;
+  text-transform: uppercase;
 }
 
 .workerStatus strong {
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .statusDot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   flex: 0 0 auto;
   border-radius: 50%;
   background: var(--muted);
@@ -85,7 +113,6 @@
 .workerStatus[data-state="ready"] .statusDot,
 .workerStatus[data-state="running"] .statusDot {
   background: var(--success);
-  box-shadow: 0 0 10px rgba(84, 214, 160, 0.65);
 }
 
 .workerStatus[data-state="error"] .statusDot,
@@ -93,68 +120,184 @@
   background: var(--danger);
 }
 
+.iconButton {
+  width: 44px;
+  height: 44px;
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--muted-strong);
+  cursor: pointer;
+}
+
+.iconButton:hover:not(:disabled) {
+  border-color: var(--border);
+  color: var(--foreground);
+}
+
+.iconButton:disabled,
+.primaryCommand:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 107, 129, 0.38);
+  border-radius: 5px;
+  background: rgba(255, 107, 129, 0.08);
+  color: var(--muted-strong);
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.warning svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--danger);
+}
+
+.warning span {
+  min-width: 0;
+}
+
+.warning strong {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--foreground);
+}
+
+.tabs {
+  min-height: 46px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.tab {
+  min-width: 108px;
+  min-height: 46px;
+  position: relative;
+  padding: 0 18px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.tab::after {
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  background: transparent;
+  content: "";
+}
+
+.tab[aria-selected="true"] {
+  color: var(--foreground);
+}
+
+.tab[aria-selected="true"]::after {
+  background: var(--primary);
+}
+
 .networkPanel,
-.tank {
+.tank,
+.historyPanel {
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--panel);
 }
 
-.networkPanel {
-  padding: 16px 18px 12px;
+.networkPanel,
+.historyPanel {
+  padding: 16px 18px 14px;
 }
 
-.sectionHeader,
-.tankHeader {
+.sectionHeader {
   justify-content: space-between;
-  gap: 16px;
+  gap: 18px;
 }
 
 .sectionHeader h2,
 .tankHeader h2 {
   font-size: 14px;
-  line-height: 1.2;
+  line-height: 1.25;
 }
 
-.sectionHeader span {
+.sectionEyebrow {
+  margin-bottom: 4px;
+}
+
+.fishPicker {
+  display: grid;
+  grid-template-columns: auto 134px;
+  align-items: center;
+  gap: 9px;
   color: var(--muted);
-  font-size: 12px;
-}
-
-.network {
-  display: block;
-  width: 100%;
-  height: 230px;
-  margin-top: 8px;
-}
-
-.edges line {
-  stroke: rgba(255, 39, 148, 0.13);
-  stroke-width: 0.75;
-}
-
-.nodes circle {
-  fill: var(--panel);
-  stroke: var(--muted);
-  stroke-width: 1.5;
-}
-
-.nodes circle:last-child {
-  stroke: var(--primary);
-}
-
-.networkLabels {
-  fill: var(--muted);
   font-size: 10px;
+  text-transform: uppercase;
+}
+
+.fishPicker select {
+  min-width: 0;
+  height: 36px;
+  padding: 0 28px 0 9px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--foreground);
+  font-size: 11px;
+  text-overflow: ellipsis;
+}
+
+.fishPicker select:disabled {
+  opacity: 0.48;
+}
+
+.selectionStatus {
+  min-height: 32px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) repeat(3, minmax(72px, auto));
+  gap: 8px 18px;
+  align-items: center;
+  margin-top: 10px;
+  padding: 7px 9px;
+  border-block: 1px solid var(--border-subtle);
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.selectionStatus span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selectionStatus span:first-child {
+  color: var(--foreground);
 }
 
 .levelBand {
   justify-content: center;
-  gap: 7px;
+  gap: 8px;
   min-height: 54px;
   color: var(--muted);
-  font-size: 15px;
+  font-size: 14px;
+  text-transform: lowercase;
 }
 
 .levelBand strong {
@@ -165,7 +308,7 @@
 .tank {
   position: relative;
   aspect-ratio: 10 / 7;
-  min-height: 300px;
+  min-height: 0;
 }
 
 .tankHeader {
@@ -174,36 +317,269 @@
   left: 0;
   z-index: 2;
   width: 100%;
-  padding: 16px 18px;
-  color: var(--muted);
-  font-size: 11px;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  color: var(--muted-strong);
+  font-size: 10px;
   pointer-events: none;
   text-shadow: 0 1px 4px #0f0d12;
   text-transform: uppercase;
 }
 
+.tankHeader > div {
+  display: grid;
+  gap: 3px;
+}
+
 .tankHeader strong {
   color: var(--primary);
-  font-size: 18px;
+  font-size: 17px;
 }
 
 .metrics {
-  justify-content: space-between;
-  min-height: 58px;
-  padding: 0 4px;
+  display: grid;
+  grid-template-columns: 1.25fr repeat(6, minmax(0, 1fr));
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.metrics > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  padding: 13px 10px;
+  border-right: 1px solid var(--border-subtle);
+}
+
+.metrics > div:last-child {
+  border-right: 0;
+}
+
+.metrics span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 9px;
+  text-transform: uppercase;
 }
 
 .metrics strong {
+  overflow: hidden;
   color: var(--foreground);
-  font-size: 14px;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-@media (max-width: 600px) {
+.controlBar,
+.trainingBar {
+  min-height: 66px;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 4px;
+}
+
+.controlGroup,
+.trainingCommands {
+  gap: 8px;
+}
+
+.speedControl {
+  min-width: 180px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+}
+
+.speedControl button {
+  min-width: 0;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 0;
+  border-right: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.speedControl button:last-child {
+  border-right: 0;
+}
+
+.speedControl button[aria-pressed="true"] {
+  background: var(--surface);
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.controlStatus {
+  min-width: 76px;
+  color: var(--muted);
+  font-size: 10px;
+  text-align: right;
+  text-transform: uppercase;
+}
+
+.trainingBar {
+  align-items: stretch;
+}
+
+.trainingCommands {
+  align-self: center;
+}
+
+.primaryCommand {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 15px;
+  border: 1px solid var(--primary);
+  border-radius: 6px;
+  background: var(--primary);
+  color: #120e11;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.trainingProgress {
+  min-width: 280px;
+  display: grid;
+  align-content: center;
+  gap: 6px;
+}
+
+.trainingProgress > div {
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted-strong);
+  font-size: 10px;
+}
+
+.trainingProgress progress {
+  width: 100%;
+  height: 6px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 3px;
+  appearance: none;
+  background: var(--surface);
+  accent-color: var(--primary);
+}
+
+.trainingProgress progress::-webkit-progress-bar {
+  background: var(--surface);
+}
+
+.trainingProgress progress::-webkit-progress-value {
+  background: var(--primary);
+}
+
+.trainingProgress progress::-moz-progress-bar {
+  background: var(--primary);
+}
+
+.trainingProgress small {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.historyPanel {
+  margin-top: 12px;
+}
+
+.historyCount {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.dialogBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(8, 7, 9, 0.76);
+}
+
+.confirmDialog {
+  width: min(100%, 420px);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--panel);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.42);
+}
+
+.dialogIcon {
+  color: var(--danger);
+}
+
+.confirmDialog h2 {
+  font-size: 17px;
+}
+
+.confirmDialog p {
+  margin-top: 6px;
+  color: var(--muted-strong);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.dialogActions {
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+  gap: 9px;
+  margin-top: 8px;
+}
+
+.secondaryButton,
+.dangerButton {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 6px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.secondaryButton {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--foreground);
+}
+
+.dangerButton {
+  border: 1px solid var(--danger);
+  background: var(--danger);
+  color: #170d11;
+}
+
+@media (max-width: 780px) {
   .page {
-    width: min(100% - 20px, 880px);
-    padding-top: 18px;
+    width: min(calc(100% - 32px), 960px);
+  }
+
+  .metrics {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .metrics > div:nth-child(4) {
+    border-right: 0;
+  }
+
+  .metrics > div:nth-child(-n + 4) {
+    border-bottom: 1px solid var(--border-subtle);
+  }
+}
+
+@media (max-width: 560px) {
+  .page {
+    width: min(calc(100% - 24px), 960px);
+    padding-top: 16px;
   }
 
   .header {
@@ -211,35 +587,155 @@
     gap: 12px;
   }
 
-  .header h1 {
-    max-width: 190px;
-    font-size: 21px;
+  .brand h1 {
+    max-width: 210px;
+    font-size: 22px;
+  }
+
+  .eyebrow {
+    max-width: 210px;
+    line-height: 1.4;
   }
 
   .workerStatus {
-    min-width: 124px;
-    padding: 8px 9px;
+    min-width: 0;
+    padding: 7px 8px;
   }
 
-  .networkPanel {
+  .workerStatus small {
+    display: none;
+  }
+
+  .tabs,
+  .tab {
+    width: 100%;
+  }
+
+  .tab {
+    min-width: 0;
+  }
+
+  .networkPanel,
+  .historyPanel {
     padding-inline: 10px;
   }
 
-  .network {
-    height: 190px;
+  .sectionHeader {
+    align-items: flex-end;
   }
 
-  .tank {
-    min-height: 0;
+  .fishPicker {
+    grid-template-columns: 112px;
+    gap: 4px;
+  }
+
+  .fishPicker > span {
+    display: none;
+  }
+
+  .fishPicker select {
+    width: 112px;
+  }
+
+  .selectionStatus {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap-inline: 10px;
+  }
+
+  .selectionStatus span:nth-child(3),
+  .selectionStatus span:nth-child(4) {
+    display: none;
+  }
+
+  .levelBand {
+    min-height: 48px;
+    font-size: 12px;
+  }
+
+  .levelBand strong {
+    font-size: 18px;
   }
 
   .tankHeader {
-    padding: 12px;
+    padding: 10px;
+    font-size: 8px;
+  }
+
+  .tankHeader h2 {
+    font-size: 11px;
+  }
+
+  .tankHeader strong {
+    font-size: 14px;
+  }
+
+  .metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .metrics > div,
+  .metrics > div:nth-child(4) {
+    border-right: 1px solid var(--border-subtle);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .metrics > div:nth-child(even) {
+    border-right: 0;
+  }
+
+  .metrics > div:last-child {
+    border-bottom: 0;
+  }
+
+  .sourceMetric {
+    grid-column: 1 / -1;
+    border-right: 0 !important;
+  }
+
+  .controlBar,
+  .trainingBar {
+    min-height: 64px;
+    gap: 8px;
+  }
+
+  .speedControl {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .speedControl button {
+    padding-inline: 7px;
+  }
+
+  .controlStatus {
+    display: none;
+  }
+
+  .trainingBar {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .trainingCommands {
+    justify-content: space-between;
+  }
+
+  .trainingProgress {
+    min-width: 0;
+  }
+
+  .historyCount {
+    max-width: 90px;
+    text-align: right;
+  }
+
+  .confirmDialog {
+    padding: 16px;
   }
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .workerStatus[data-state="starting"] .statusDot {
+  .page[data-reduced-effects="false"] .workerStatus[data-state="starting"] .statusDot {
     animation: pulse 1.2s ease-in-out infinite;
   }
 }

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_EVOLUTION_CONFIG, createEvolutionRun } from "@/evolution";
+import {
+  DEFAULT_EVOLUTION_CONFIG,
+  createEvolutionRun,
+  evolveGeneration,
+} from "@/evolution";
 import {
   createRunCheckpoint,
   type CheckpointRepository,
@@ -21,6 +25,17 @@ const TEST_CONFIG = {
   tournamentSize: 1,
   episodesPerGenome: 1,
 };
+
+const TEST_METRIC = Object.freeze({
+  generation: 0,
+  level: 0 as const,
+  bestFitness: 2,
+  meanFitness: 1,
+  championSurvivalRate: 0.5,
+  medianSurvivalRate: 0.25,
+  durationMilliseconds: 5,
+  curriculumAdvanced: false,
+});
 
 function makeCheckpoint() {
   return createRunCheckpoint({
@@ -61,6 +76,22 @@ function makeReplayCheckpoint() {
     state,
     metricHistory: [],
     replaySource,
+  });
+}
+
+function makeCheckpointWithHistory() {
+  const world = { ...WORLD_CONFIG, episodeSeconds: 0.1 };
+  const initial = createEvolutionRun({
+    runSeed: 84,
+    config: { ...TEST_CONFIG, automaticCurriculum: false },
+  });
+  const evolved = evolveGeneration(initial, { world });
+  return createRunCheckpoint({
+    runId: "test-run",
+    savedAt: "2026-07-12T00:00:00.000Z",
+    world,
+    state: evolved.state,
+    metricHistory: [TEST_METRIC],
   });
 }
 
@@ -196,6 +227,11 @@ describe("trainer client", () => {
       status: "ready",
       generation: 0,
       recovered: false,
+      restoredFromCheckpoint: true,
+      runSeed: 42,
+      evolutionConfig: TEST_CONFIG,
+      metricHistory: [],
+      persistenceBackend: "indexeddb",
     });
 
     client.reset({ runId: "reset-run", runSeed: 9 });
@@ -206,6 +242,38 @@ describe("trainer client", () => {
       evolutionConfig: TEST_CONFIG,
       world: { episodeSeconds: 0.1 },
     });
+    client.dispose();
+  });
+
+  it("owns restored config and full history, then appends generation metrics", async () => {
+    const repository = new FakeRepository();
+    repository.checkpoint = makeCheckpointWithHistory();
+    const workers: FakeWorker[] = [];
+    const client = createClient(repository, workers);
+
+    await client.initialize();
+
+    expect(client.getState()).toMatchObject({
+      runSeed: 84,
+      evolutionConfig: { automaticCurriculum: false },
+      metricHistory: [TEST_METRIC],
+      latestMetric: TEST_METRIC,
+      restoredFromCheckpoint: true,
+      persistenceBackend: "indexeddb",
+    });
+    expect(Object.isFrozen(client.getState().evolutionConfig)).toBe(true);
+    expect(Object.isFrozen(client.getState().metricHistory)).toBe(true);
+
+    workers[0].emitMessage(readyEvent(true));
+    const nextMetric = { ...TEST_METRIC, generation: 1, bestFitness: 3 };
+    workers[0].emitMessage({
+      type: "GENERATION",
+      runId: "test-run",
+      metric: nextMetric,
+    });
+
+    expect(client.getState().metricHistory).toEqual([TEST_METRIC, nextMetric]);
+    expect(client.getState().latestMetric).toEqual(nextMetric);
     client.dispose();
   });
 
@@ -380,10 +448,15 @@ describe("trainer client", () => {
     expect(client.getState()).toEqual({
       status: "starting",
       runId: "replacement",
+      runSeed: 7,
+      evolutionConfig: DEFAULT_EVOLUTION_CONFIG,
       generation: 0,
       level: 0,
+      metricHistory: [],
+      persistenceBackend: "indexeddb",
       warning: undefined,
       recovered: false,
+      restoredFromCheckpoint: false,
     });
 
     workers[0].emitMessage({

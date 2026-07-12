@@ -207,6 +207,7 @@ const EvolutionConfigSchema = z.strictObject({
   episodesPerGenome: z.number().int().positive(),
   minimumWeight: z.number().finite(),
   maximumWeight: z.number().finite(),
+  automaticCurriculum: z.boolean().optional(),
 });
 
 const DecodedCheckpointSchema = z

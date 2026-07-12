@@ -160,4 +160,12 @@ test("trains a generation off the main thread", async ({ page }) => {
       return initialize?.checkpoint?.evolution?.generation;
     }),
   ).toBe(1);
+
+  await page.getByRole("tab", { name: "Train" }).click();
+  await expect(
+    page.getByRole("button", { name: "Resume training" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Local replay" }),
+  ).toBeVisible();
 });

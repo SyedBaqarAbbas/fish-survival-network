@@ -64,6 +64,12 @@ export function validateEvolutionConfig(config: Readonly<EvolutionConfig>) {
   ) {
     throw new RangeError("maximumWeight must be greater than minimumWeight.");
   }
+  if (
+    config.automaticCurriculum !== undefined &&
+    typeof config.automaticCurriculum !== "boolean"
+  ) {
+    throw new TypeError("automaticCurriculum must be a boolean when provided.");
+  }
 
   return config;
 }

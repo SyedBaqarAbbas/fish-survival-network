@@ -1,0 +1,87 @@
+.graph {
+  display: block;
+  width: 100%;
+  height: clamp(250px, 42vw, 340px);
+  overflow: visible;
+  color: #f4f1f6;
+}
+
+.edge {
+  transition:
+    opacity 90ms linear,
+    stroke 90ms linear,
+    stroke-width 90ms linear;
+}
+
+.nodeCircle,
+.glowingNode {
+  transition:
+    fill 90ms linear,
+    fill-opacity 90ms linear,
+    stroke 90ms linear,
+    stroke-opacity 90ms linear;
+}
+
+.glowingNode {
+  filter: drop-shadow(0 0 5px var(--node-color));
+}
+
+.columnLabels,
+.inputLabel,
+.lockedLabel,
+.outputLabel {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  letter-spacing: 0;
+}
+
+.columnLabels {
+  fill: #716b76;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.inputLabel,
+.outputLabel,
+.lockedLabel {
+  font-size: 11px;
+}
+
+.inputLabel,
+.outputLabel {
+  fill: #aaa4ae;
+}
+
+.lockedLabel {
+  fill: #59545f;
+}
+
+.reducedEffects .edge,
+.reducedEffects .nodeCircle,
+.reducedEffects .glowingNode {
+  filter: none;
+  transition: none;
+}
+
+@media (max-width: 520px) {
+  .graph {
+    height: 270px;
+  }
+
+  .columnLabels {
+    font-size: 9px;
+  }
+
+  .inputLabel,
+  .outputLabel,
+  .lockedLabel {
+    font-size: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .edge,
+  .nodeCircle,
+  .glowingNode {
+    transition: none;
+  }
+}

@@ -18,8 +18,9 @@ test("renders the lab and starts the training worker", async ({ page }) => {
   );
   await expect(
     page.getByRole("img", {
-      name: "Eleven input, eight hidden, and two output neuron topology",
+      name: /Live neural policy for genome/,
     }),
   ).toBeVisible();
+  await expect(page.getByTestId("neural-graph").locator("line")).toHaveCount(104);
   expect(errors).toEqual([]);
 });
